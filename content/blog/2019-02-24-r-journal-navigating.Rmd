@@ -1,0 +1,28 @@
+---
+title: "Read all about it! Navigating the R Package Universe"
+date: 2019-02-24
+slug: "r-journal-navigating"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+library(ggplot2)
+library(silgelib)
+library(tidyverse)
+theme_set(theme_plex())
+```
+
+In the [most recent issue of the *R Journal*](https://journal.r-project.org/archive/2018-2/), I have a [new paper](https://journal.r-project.org/archive/2018/RJ-2018-058/index.html) out with coauthors John Nash and Spencer Graves. Check out the abstract:
+
+> Today, the enormous number of contributed packages available to R users outstrips any given user’s ability to understand how these packages work, their relative merits, or how they are related to each other. We organized a plenary session at useR!2017 in Brussels for the R community to think through these issues and ways forward. This session considered three key points of discussion. Users can navigate the universe of R packages with (1) capabilities for directly searching for R packages, (2) guidance for which packages to use, e.g., from CRAN Task Views and other sources, and (3) access to common interfaces for alternative approaches to essentially the same problem.
+
+If you've been around a little while, you might remember that I ran a [brief online survey in the spring of 2017](https://github.com/juliasilge/packagesurvey) focused on this topic, and I've written before on my blog about the [plenary session in general](https://juliasilge.com/blog/navigating-packages/) and the [specific topics I focused on](https://juliasilge.com/blog/package-guidance/) in this project. The paper represents a summary of this work, what we've learned both in preparing for the plenary session and in synethesizing community feedback afterward. If you are interested in this topic and what it means to be part of a community with over 13,000 packages on CRAN and a fast-growing userbase, [check it out](https://journal.r-project.org/archive/2018/RJ-2018-058/index.html) and let me know what you think!
+
+From the end of the paper:
+
+> Our exploration of these topics leads us to call for increased respect and value for the work done by local meetup group organizers and individuals who contribute to spreading R knowledge, both online and in their communities. Our survey and discussions show how impactful these community networks are; investing in community building is not something we need do only because of idealism, but because it is effective. 
+> 
+> We also identify the importance of growing the skills of package developers across the R ecosystem, in dependency management, documentation, and beyond. Wider adoption of best practices makes the R package universe easier for everyone to navigate, from the developer with downstream dependencies to the CRAN Task View maintainer to the new R user.

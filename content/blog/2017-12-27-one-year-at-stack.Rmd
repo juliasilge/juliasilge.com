@@ -1,0 +1,55 @@
+---
+title: "One year as a data scientist at Stack Overflow"
+date: 2017-12-27
+slug: "one-year-at-stack"
+tags: [career]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180)
+options(width=80, dplyr.width = 150)
+```
+
+
+I recently passed my one-year anniversary of working at Stack Overflow as a data scientist.
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">I have some very exciting news! I am joining the data team at <a href="https://twitter.com/StackOverflow?ref_src=twsrc%5Etfw">@StackOverflow</a>. ✨📊✨📊✨</p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/808671275597971456?ref_src=twsrc%5Etfw">December 13, 2016</a></blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+Coming to Stack Overflow has been an adventure for me. This is my first time to work at an actual tech company. I have been what I like to think of as "tech adjacent" my whole career, writing code and working on technical questions but never before working at a straight-up web company. In my first several weeks at Stack Overflow, I spent a lot of time googling things like "what does CTR stand for" and "what is an impression". By a month in, this was me:
+
+> "Wait, how *does* the internet work???"
+
+It's still a little bit of an open question, if you ask me.
+
+## Data science at a small tech company
+
+In the fall I saw [this post by Shanif Dhanani](https://medium.com/apteo/what-makes-a-good-data-scientist-at-a-small-company-3f445d421dff) about being a data scientist at a small company, and it is entirely on point, the whole way through. So much of that post resonates with my own experience of being a data scientist at a small company. And yes, I do keep saying "small company"; Stack Overflow is likely smaller than you think it is, 250 or so employees in total. I am the second data scientist here, joining [David Robinson](http://varianceexplained.org/) who was the first data science hire, on a data team that is five in total.
+
+I cannot emphasize enough how much of my day-to-day work is communicating, collaborating with others, and answering not-entirely-specified questions. Data science is highly technical work, but the value of my technical work would be much lower if I could not communicate what it means in clear and compelling ways. My definition of communication here is pretty broad, and includes speaking, writing, and data visualization. 
+
+I work on R packages and other kinds of code, but most of my work is done in [R Markdown](http://rmarkdown.rstudio.com/), writing reports, documents, presentations, and blog posts. What I love about embracing a workflow with so much R Markdown is that I can weave together code and text to produce beautiful reproducible reports. I personally am not a fan of the [notebook options](http://rmarkdown.rstudio.com/r_notebooks.html), so I have those all turned off; instead, I use my R Markdown documents to produce either plain markdown (to publish on GitHub Enterprise), Word documents (which I then publish on Google Docs), or HTML (to publish on [RStudio Connect](https://www.rstudio.com/products/connect/), which we pay for, or elsewhere).
+
+Most of this communication work that I generate is for internal consumption, for audiences that range from software engineers working on a feature, to product managers planning a change to one of our products, to C-level executives who want to understand what drives client behavior like renewal. Some of this communication work is for external consumption too, writing for the Stack Overflow blog. I've written for our business/client facing blog several times, about [student developers](https://www.stackoverflowbusiness.com/blog/what-you-can-learn-about-developer-job-preferences-from-students-to-professionals) to [data science hiring](https://www.stackoverflowbusiness.com/blog/this-is-how-data-scientists-search-for-jobs) to [benefits for developers](https://www.stackoverflowbusiness.com/blog/what-benefits-are-companies-offering-developers). I also have written for our developer facing blog about lots of fun topics, from [developer salaries](https://stackoverflow.blog/2017/09/19/much-developers-earn-find-stack-overflow-salary-calculator/) to [fictional representations of coders](https://stackoverflow.blog/2017/03/28/realistic-developer-fiction/) to [A/B testing](https://stackoverflow.blog/2017/10/17/power-calculations-p-values-ab-testing-stack-overflow/). You can check out [all my posts if you like](https://stackoverflow.blog/authors/juliasilge/).
+
+## Embracing remote culture
+
+Stack Overflow has a long-standing commitment to remote work for our technical teams, and I joined the data team as a fully remote data scientist. How does Stack Overflow make this kind of remote culture a workable reality for our teams of engineers, product managers, designers, and data scientists? Our operations manager Jess Pardue [wrote about some of the details on the Stack Overflow blog](https://stackoverflow.blog/2017/09/29/making-remote-work-behind-scenes/) and I know that I personally have benefited from her thoughtful planning. 
+
+I have worked remotely for a long time at some level or another (back to my grad school days, actually) and I have had experiences ranging from good to... not so good. In one memorably bad situation, I was literally left out of meetings and it seemed like people forgot that I existed. Stack Overflow's vigilant commitment to communication that keeps remote employees in the loop and positioning remote employees as first-class citizens makes this the best experience I have had as a remote technical worker.
+
+Of the five of us on the data team, two are in the offices in NYC and three of us are remote. This is about typical for teams at Stack. I'm the furthest west on my team, in Utah, which does sometimes present modest time zone challenges. I walk my two youngest kids to school every day and on some days, my notifications are a bit CRAZY by the time I get back and settle in to my work day at 8:45am or so. I have dedicated space in my house for work, a bright sunny room with an adjustable standing desk and an enormous monitor. All three of my kids are school-aged now and I have childcare help for after school, to get snacks, help with homework, and drive them to their activities. My work space is open to main living areas in our house (no door) but I like that and it works for us; I get work done but we all are around each other after school and can interact. I do try to front load meetings into the hours when my kids are at school, but the time zone difference plays into my favor there.
+
+## Weathering ups and downs
+
+This year at Stack Overflow has had its hard moments along with the amazing ones. When I consider what has made me glad to be at Stack, there are two main ideas that stand out for me.
+
+- I get to work on interesting questions using interesting data, questions about technology, communities, the software industry, developers, etc.
+- I get to work with people who are thoughtful, caring, smart, and want to make a difference.
+
+As I reflect on the last year and especially think about both the people who I do and do not still work with to build Stack Overflow together, I am thankful to have been on this adventure with these people. We collaborated on some great projects this past year.
+
+I am optimistic about the projects that are coming up in the coming year for me and my fellow Stackers, the new [Developer Survey](https://insights.stackoverflow.com/survey/) that is about to launch, [Channels](https://stackoverflow.com/channels) that is already is beta with some new clients, and more!
+

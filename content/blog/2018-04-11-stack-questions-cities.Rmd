@@ -1,0 +1,82 @@
+---
+title: "Stack Overflow questions around the world"
+date: 2018-04-11
+slug: "stack-questions-cities"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+library(ggplot2)
+library(silgelib)
+library(tidyverse)
+theme_set(theme_plex())
+tag_city_questions <- read_csv("tag-city-questions.csv") %>%
+    select(-CenterId, -TagId) %>%
+    select(Tag, Questions, CityName, CountryName, everything()) %>%
+    mutate(LeafletPop = str_c(paste0("<b>", CityName, "</b>"),
+                              Tag, 
+                              scales::percent(Percent), 
+                              scales::comma(Questions), sep = "<br/>"))
+```
+
+I am so lucky to work with so many generous, knowledgeable, and amazing people at Stack Overflow, including [Ian Allen](https://stackoverflow.blog/authors/iallen/) and [Kirti Thorat](https://stackoverflow.com/users/1012097/kirti-thorat). Both Ian and Kirti are part of biweekly sessions we have at Stack Overflow where several software developers join me in practicing R, data science, and modeling skills. This morning, the two of them went to a high school outreach event in NYC for students who have been studying computer science, equipped with Stack Overflow `r emo::ji("sparkles")` SWAG `r emo::ji("sparkles")`, some coding activities based on Stack Overflow internal tools and packages, and a Shiny app that I developed to share a bit about who we are and what we do.
+
+The Shiny app was fun to build and the results are interesting, so I thought I would share it here!
+
+## Data for the app
+
+The data itself for this app tabulates questions asked on Stack Overflow over the past year, for the top several hundred tags in the top several hundred cities. The way I access this data involves our internal databases, but most of the data for questions and answers on Stack Overflow is public. In my opinion, the easiest way to get it in R is to use [Google BigQuery](https://cloud.google.com/bigquery/public-data/stackoverflow) and the [bigrquery](https://github.com/r-dbi/bigrquery) package.
+
+After I query and aggregate the data I want, it looks like this.
+
+```{r}
+library(tidyverse)
+tag_city_questions
+```
+
+This data frame tells us for each tag on Stack Overflow, what is the total number of questions asked in the past year, and then for each city/metro area, what is the percent of that total that came from that city. The other columns (`Latitude`, `Longitude`, and `LeafletPop`) are what we are going to use for some mapping.
+
+For example, we could look at just the R questions.
+
+```{r}
+tag_city_questions %>%
+    filter(Tag == "r")
+```
+
+These are some of the biggest cities in the world, with the largest developer populations. R is used proportionally more in some places than others, so the rankings of these cities will be different than, say, JavaScript.
+
+## Building a Leaflet map
+
+For this app to share with the high school students, we wanted to have an interactive map so I turned to my standard option for that, [Leaflet](https://rstudio.github.io/leaflet/). How do we get started with a non-Shiny Leaflet map?
+
+```{r}
+library(leaflet)
+
+tag_city_questions %>%
+    filter(Tag == "r") %>%
+    leaflet(width = "100%") %>%
+    addProviderTiles("CartoDB.Positron") %>%
+    setView(lng = -90, lat = 40, zoom = 4) %>%
+    addCircles(lng = ~Longitude, lat = ~Latitude, 
+               color = NULL,
+               radius = ~sqrt(Percent) * 5e5, popup = ~LeafletPop,
+               fillColor = "blue", fillOpacity = 0.7)
+```
+
+An interactive map! With popup text and everything! But looking at a map like this with only one technology on it isn't the most informative, because it mostly just shows us where developers live. You know, [like that xkcd](https://xkcd.com/1138/). What would be *more* interesting would be to compare multiple technologies at once, to be able to see where technologies are asked about proportionally more and less. To do that, let's use Shiny.
+
+## Building a Shiny app
+
+To make a [Leaflet map for Shiny](https://rstudio.github.io/leaflet/shiny.html), it's not too many more steps. The parts of the map that do *not* need to be redrawn from scratch with every user input go into a call to `leafletOutput()`, and then the parts of the map that *do* need to update with user input go into `leafletProxy()`. After a few more steps, the [Shiny app](https://juliasilge.shinyapps.io/tags-cities-questions/) is ready to go!
+
+[![center](/figures/2018/stack-questions.gif)](https://juliasilge.shinyapps.io/tags-cities-questions/)
+
+You can see the code that makes this app by visiting it and clicking on "Source Code" in the upper right.
+
+This is quite interesting now. For example, you can see how anomalous the relative balance of TensorFlow to JavaScript is in the Bay Area compared to most other cities in the US. Lots of other tags to explore too!
+
+One of the best things about working at Stack Overflow is the coworkers I have, and Ian and Kirti are great examples of that. I was really happy to get to help out with their high school coding outreach for this morning, and to build a fun Shiny app to boot. Let me know if you have any feedback or questions!
+

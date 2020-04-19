@@ -1,0 +1,210 @@
+---
+title: "Understanding PCA using Stack Overflow data"
+date: 2018-05-18
+slug: "stack-overflow-pca"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+library(ggplot2)
+library(silgelib)
+library(tidyverse)
+theme_set(theme_plex())
+library(sqlstackr)
+
+tags_include <- tbl_TrafficLite("TagSets") %>%
+    filter(Rank <= 500 | SetName == "MostVisited")
+
+people_include <- tbl_TrafficLite("Features_RegisteredUsers") %>%
+    filter(FeatureType == "SingleFeature", Value >= 200)
+
+tag_percents <- tbl_TrafficLite("Features_RegisteredUsers") %>%
+    filter(FeatureType == "TagVisits.TagPercent.OneYear", 
+           AccountId %% 10 == 0 | AccountId == 7156020) %>%
+    select(AccountId, Tag = Feature, Value) %>%
+    semi_join(tags_include, by = "Tag") %>%
+    semi_join(people_include, by = "AccountId") %>%
+    collect(n = Inf) %>%
+    nest(-AccountId) %>%
+    sample_frac() %>% 
+    transmute(User = row_number(), data) %>%
+    unnest()
+```
+
+
+This year, I have given some talks about understanding [principal component analysis](https://twitter.com/chrisalbon/status/992454728821850112) using what I spend day in and day out with, Stack Overflow data. You can see a recording of one of these [talks from rstudio::conf 2018](https://www.rstudio.com/resources/videos/understanding-pca-using-shiny-and-stack-overflow-data/). When I have given these talks, I've focused a lot on understanding PCA. This blog post walks through how I implemented PCA and how I made the plots I used in my talk.
+
+## Some high dimensional data
+
+This analysis uses traffic from the past year for registered users to about 500 of the top [tags](https://stackoverflow.com/tags) on Stack Overflow. The analysis here uses 10% of registered traffic for convenience/speed but I have implemented similar analysis with all traffic and gotten about the same results. 
+
+Think of each person as a point in a high dimensional space with axes that correspond to technologies like R or JavaScript or C++. People who do similar kinds of work are close to each other in this high dimensional space. Principal component analysis will transform this high dimensional to a new `r emo::ji("sparkles")`special`r emo::ji("sparkles")` high dimensional space with special characteristics.
+
+The data that I start with, after constructing an appropriate query to our databases, looks like this.
+
+```{r}
+library(tidyverse)
+library(scales)
+
+tag_percents
+```
+
+
+Notice that this is in a tidy format, with one row per user and technology. The `User` column here is a randomized ID, not a Stack Overflow identifier. At Stack Overflow, we make a [lot](https://stackoverflow.blog/2010/06/13/introducing-stack-exchange-data-explorer/) of [data](https://cloud.google.com/bigquery/public-data/stackoverflow) [public](https://meta.stackexchange.com/questions/19579/where-are-the-stack-exchange-data-dumps), but traffic data, i.e. which users visit which questions, is not part of that. True anonymization of high dimensional data is [extremely difficult](https://gravitational.com/blog/hashing-for-anonymization/); what I have done here is randomize the order of the data and replace Stack Overflow identifiers with numbers. The `Value` column tells us what percentage of that user's traffic for the past year goes to that tag.
+
+Anonymization-ish issues aside, what technologies are dominating in users' traffic?
+
+```{r, fig.width=8, fig.height=7}
+tag_percents %>%
+    group_by(Tag) %>%
+    summarise(Value = mean(Value)) %>%
+    arrange(desc(Value)) %>%
+    top_n(15) %>%
+    mutate(Tag = reorder(Tag, Value)) %>%
+    ggplot(aes(Tag, Value, label = Tag, fill = Tag)) +
+    geom_col(alpha = 0.9, show.legend = FALSE) +
+    geom_text(aes(Tag, 0.001), hjust = 0,
+              color = "white", size = 4, family = "IBMPlexSans-Bold") +
+    coord_flip() +
+    labs(x = NULL, y = "Average % of a user's traffic") +
+    scale_y_continuous(labels = percent_format(), expand = c(0.015,0)) +
+    theme(axis.text.y=element_blank())
+```
+
+
+## Implementing PCA
+
+We have tidy data, both because that's what I get when querying our databases and because it is useful for exploratory data analysis when preparing for a machine learning algorithm like PCA. To implement PCA, we need a matrix, and in this case a sparse matrix makes most sense. Most developers do not visit most technologies so there are lots of zeroes in our matrix. The [tidytext](http://juliasilge.github.io/tidytext/) package has a function `cast_sparse()` that takes tidy data and casts it to a sparse matrix.
+
+```{r}
+sparse_tag_matrix <- tag_percents %>%
+    tidytext::cast_sparse(User, Tag, Value)
+```
+
+Several of the implementations for PCA in R are not sparse matrix aware, such as `prcomp()`; the first thing it will do is coerce the BEAUTIFUL SPARSE MATRIX you just made into a regular matrix, and then you will be sitting there for one zillion years with no RAM left. (That is a precise and accurate estimate from my benchmarking, obviously.) One option that *does* take advantage of sparse matrices is the [irlba](https://bwlewis.github.io/irlba/) package.
+
+Also, don't forget to use `scale. = TRUE` for this matrix; [scaling is very important for PCA](https://stats.stackexchange.com/questions/53/pca-on-correlation-or-covariance).
+
+```{r}
+tags_pca <- irlba::prcomp_irlba(sparse_tag_matrix, n = 64, scale. = TRUE)
+```
+
+The value for `n` going into `prcomp_irlba()` is how many components we want the function to fit.
+
+What is this thing we have created?
+
+```{r}
+class(tags_pca)
+names(tags_pca)
+```
+
+`r emo::ji("tada")`
+
+## Analyzing the PCA output
+
+I like to deal with dataframes, so the next for me is to `tidy()` the output of my principal component analysis. This makes it easy for me to handle the output with dplyr and make any kind of plot I can dream up with ggplot2. The output for irlba isn't handled perfectly by [broom](https://cran.r-project.org/package=broom) so I will put together my own dataframe here, with just a bit of munging.
+
+```{r}
+library(broom)
+
+tidied_pca <- bind_cols(Tag = colnames(tags_scaled),
+                        tidy(tags_pca$rotation)) %>%
+    gather(PC, Contribution, PC1:PC64)
+
+tidied_pca
+```
+
+Notice here I made a dataframe with one row for each tag and component.
+
+What do these results look like, from a birds eye level?
+
+```{r, fig.width=10, fig.height=12}
+tidied_pca %>% 
+    filter(PC %in% paste0("PC", 1:6)) %>%
+    ggplot(aes(Tag, Contribution, fill = Tag)) +
+    geom_col(show.legend = FALSE, alpha = 0.8) +
+    theme(axis.text.x = element_blank(), 
+          axis.ticks.x = element_blank(),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank()) + 
+    labs(x = "Stack Overflow tags",
+         y = "Relative importance in each principal component") +
+    facet_wrap(~ PC, ncol = 2)
+```
+
+This is very beautiful if not maximally informative. What we are looking at is the first six components, and how much individual Stack Overflow tags, alphabetized on the x-axis, contribute to them. We can see where related technologies probably all start with the same couple of letters, say in the orange in PC4 and similar.
+
+Let's zoom in and look at just the first component.
+
+```{r, fig.width=10, fig.height=5}
+tidied_pca %>%
+    filter(PC == "PC1") %>%
+    top_n(40, abs(Contribution)) %>%
+    mutate(Tag = reorder(Tag, Contribution)) %>%
+    ggplot(aes(Tag, Contribution, fill = Tag)) +
+    geom_col(show.legend = FALSE, alpha = 0.8) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), 
+          axis.ticks.x = element_blank()) + 
+    labs(x = "Stack Overflow tags",
+         y = "Relative importance in principle component")
+```
+
+Now we can see which tags contribute to this component. On the positive side, we see front end web development technologies like HTML, JavaScript, jQuery, CSS, and such. On the negative side, we see Python and low level technologies like strings, lists, and C++. What does this mean? It means that what accounts for the most variation in Stack Overflow users is whether they do work more with front end web technologies or Python and low level technologies.
+
+What about the second principal component?
+
+```{r, fig.width=10, fig.height=5}
+tidied_pca %>%
+    filter(PC == "PC2") %>%
+    top_n(40, abs(Contribution)) %>%
+    mutate(Tag = reorder(Tag, Contribution)) %>%
+    ggplot(aes(Tag, Contribution, fill = Tag)) +
+    geom_col(show.legend = FALSE, alpha = 0.8) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), 
+          axis.ticks.x = element_blank()) + 
+    labs(x = "Stack Overflow tags",
+         y = "Relative importance in principle component")
+```
+
+The first principal component was a contrast between two kinds of software engineering, but the second principal component is different. It is more like a binary, yes/no component and is all about whether a developer works with C#, .NET, Visual Studio, and the rest of the Microsoft tech stack. What does *this* mean? It is means that what explains the *second* most variation in visitors to Stack Overflow is whether or not they visit these kinds of Microsoft technology questions.
+
+We could keep going on through the components, learning more about the Stack Overflow technology ecosystem, but I go over through a fair amount of that in the video, including technologies relevant to us data science folks. I also made a Shiny app that allows you to interactively choose which component you are looking at. I bet if you have a bit of Shiny experience, you can imagine how I got started with that!
+
+## Projecting the high dimensional plane
+
+One really cool thing I `r emo::ji("heart")` about PCA is being able to think and reason about high dimensional data. Part of that is projecting the many, many dimensions down onto a more plottable two dimensions. Let's walk through how to do that.
+
+What we want now is the equivalent of `broom::augment()`, and let's also calculate the percent deviation explained by each component.
+
+```{r}
+percent_variation <- tags_pca$sdev^2 / sum(tags_pca$sdev^2)
+
+augmented_pca <- bind_cols(User = rownames(tags_scaled),
+                           tidy(tags_pca$x))
+
+augmented_pca
+```
+
+Notice that I have a wider dataframe here and I haven't used `gather()` on it; I'm going to keep it that way for plotting. The object `percent_variation` is a vector that contains how much of the variation of the dataset as a whole is explained by each component.
+
+```{r, fig.width=10, fig.height=8}
+augmented_pca %>%
+    mutate(User = as.integer(User)) %>%
+    filter(User %% 2 == 0) %>%
+    ggplot(aes(PC1, PC2)) +
+    geom_point(size = 1.3, color = "midnightblue", alpha = 0.1) +
+    labs(x = paste0("Principal component 1 (",  percent(percent_variation[1]), ")"), 
+         y = paste0("Principal component 2 (",  percent(percent_variation[2]),")"),
+         title = "Projection of Stack Overflow traffic on to the first two principal components",
+         subtitle = "The very high dimensional space can be projected down onto components we have explored")
+```
+
+You can see I'm plotting every other person in this plot, just to make something nicer to look at without so much overplotting. Remember that PC1 stretchs from front end developers to Python and low level technology folks, and PC2 is all about the Microsoft tech stack. We see how the very high dimensional space of Stack Overflow tags here projects down to the first two components. Notice that I have added the percent variation to each axis. These numbers are not enormously high, which is just real life for you. There is a lot of variation in Stack Overflow users, and if I were to try to use any of these components for dimensionality reduction or as predictors in a model, I would need to reckon with that.
+
+## Applications
+
+Speaking of real life, I find that PCA is great for understanding a high dimensional dataset, what contributes to variation, and how much success I might be able to have in other analyses. Another way I recently used PCA was to explore [which cities Amazon might be considering for their second headquarters](https://stackoverflow.blog/2018/02/28/evaluating-options-amazons-hq2-using-stack-overflow-data/), based on exactly the same data I used here. The exact results for the components and which technologies contribute to them have shifted a bit since several months have passed, and that high dimensional space with all those users in it is not perfectly static! Let me know if you have any questions or feedback.
+

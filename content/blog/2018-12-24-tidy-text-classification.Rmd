@@ -1,0 +1,271 @@
+---
+title: "Text classification with tidy data principles"
+date: 2018-12-24
+slug: "tidy-text-classification"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler")
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+I am an enthusiastic proponent of using [tidy data principles for dealing with text data](https://www.tidytextmining.com/). This kind of approach offers a fluent and flexible option not just for exploratory data analysis, but also for machine learning for text, including both [unsupervised machine learning](https://juliasilge.com/blog/evaluating-stm/) and supervised machine learning. I haven't written much about supervised machine learning for text, i.e. predictive modeling, using tidy data principles, so let's walk through an example workflow for this a text classification task.
+
+This post lays out a workflow similar to [the approach taken by Emil Hvitfeldt](https://www.hvitfeldt.me/2018/01/predicting-authorship-in-the-federalist-papers-with-tidytext/) in predicting authorship of the Federalist Papers, so be sure to check out that post to see more examples. Also, I've been giving some workshops lately that included material on this, such as for [IBM Community Day: AI](https://github.com/juliasilge/ibm-ai-day) and at the [2018 Deming Conference](https://github.com/juliasilge/deming2018). I have slides and code available at those links. This material is also some of what we'll cover in the [short course I am teaching at the SDSS conference in 2019](https://ww2.amstat.org/meetings/sdss/2019/onlineprogram/Program.cfm?date=05-29-19) so come on out to Bellevue if you are interested!
+
+## Jane Austen vs. H. G. Wells
+
+Let's build a supervised machine learning model that learns the difference between text from *Pride and Prejudice* and text from *The War of the Worlds*. We can access the full texts of these works from [Project Gutenberg](https://www.gutenberg.org/) via the [gutenbergr](https://ropensci.org/tutorials/gutenbergr_tutorial/) package.
+
+```{r}
+library(tidyverse)
+library(gutenbergr)
+
+titles <- c("The War of the Worlds",
+            "Pride and Prejudice")
+books <- gutenberg_works(title %in% titles) %>%
+    gutenberg_download(meta_fields = "title") %>%
+    mutate(document = row_number())
+
+books
+```
+
+We have the text data now, and let's frame the kind of prediction problem we are going to work on. Imagine that we take each book and cut it up into lines, like strips of paper (`r emo::ji("sparkles")` confetti `r emo::ji("sparkles")`) with an individual line on each paper. Let's train a model that can take an individual line and give us a probability that this book comes from *Pride and Prejudice* vs. from *The War of the Worlds*. As a first step, let's transform our text data into a [tidy format](https://www.tidytextmining.com/tidytext.html).
+
+```{r}
+library(tidytext)
+
+tidy_books <- books %>%
+    unnest_tokens(word, text) %>%
+    group_by(word) %>%
+    filter(n() > 10) %>%
+    ungroup
+
+tidy_books
+```
+
+We've also removed the rarest words in that step, keeping only words in our dataset that occur more than 10 times total over both books.
+
+The tidy data structure is a great fit for performing exploratory data analysis, making lots of plots, and deeply understanding what is in the dataset we would like to use for modeling. In interest of space, let's just show one example plot we could use for EDA, looking at the most frequent words in each book after removing stop words.
+
+
+```{r frequent_words, fig.width=9, fig.height=6}
+tidy_books %>%
+    count(title, word, sort = TRUE) %>%
+    anti_join(get_stopwords()) %>%
+    group_by(title) %>%
+    top_n(20) %>%
+    ungroup %>%
+    ggplot(aes(reorder_within(word, n, title), n,
+               fill = title)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    scale_x_reordered() +
+    coord_flip() +
+    facet_wrap(~ title, scales = "free") +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(x = NULL, y = "Word count",
+         title = "Most frequent words after removing stop words",
+         subtitle = "Words like 'said' occupy similar ranks but other words are quite different")
+```
+
+We could perform other kinds of EDA like looking at [tf-idf by book](https://www.tidytextmining.com/tfidf.html) but we'll stop here for now and move on to building a classification model.
+
+## Building a machine learning model
+
+Let's get this data ready for modeling. We want to split our data into training and testing sets, to use for building the model and evaluating the model. Here I use the [rsample](https://tidymodels.github.io/rsample/) package to split the data; it works great with a tidy data workflow. Let's go back to the `books` dataset (not the `tidy_books` dataset) because the lines of text are our individual observations.
+
+```{r}
+library(rsample)
+
+books_split <- books %>% 
+    select(document) %>% 
+    initial_split()
+train_data <- training(books_split)
+test_data <- testing(books_split)
+```
+
+You can also use functions from the rsample package to generate resampled datasets, but the specific modeling approach we're going to use will do that for us so we only need a simple train/test split.
+
+Now we want to transform our **training data** from a tidy data structure to a sparse matrix to use for our machine learning algorithm.
+
+```{r}
+sparse_words <- tidy_books %>%
+    count(document, word) %>%
+    inner_join(train_data) %>%
+    cast_sparse(document, word, n)
+
+class(sparse_words)
+dim(sparse_words)
+```
+
+```{r echo = FALSE}
+dims1 <- dim(sparse_words)[1]
+dims2 <- dim(sparse_words)[2]
+```
+
+
+We have `r comma(dims1)` training observations and `r dims2` features at this point; text feature space handled in this way is very high dimensional, so we need to take that into account when considering our modeling approach.
+
+One reason this overall approach is flexible and wonderful is that you could at this point `cbind()` other columns, such as non-text numeric data, onto this sparse matrix. Then you can use this combination of text and non-text data as your predictors in the machine learning algorithm, and the regularized regression algorithm we are going to use will find which are important for your problem space. I've experienced great results with my real world prediction problems using this approach.
+
+We also need to build a dataframe with a response variable to associate each of the `rownames()` of the sparse matrix with a title, to use as the quantity we will predict in the model.
+
+```{r}
+word_rownames <- as.integer(rownames(sparse_words))
+
+books_joined <- data_frame(document = word_rownames) %>%
+    left_join(books %>%
+                  select(document, title))
+```
+
+Now it's time to train our classification model! Let's use the [glmnet](https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html) package to fit a logistic regression model with [LASSO regularization](https://en.wikipedia.org/wiki/Lasso_(statistics)). It's a great fit for text classification because the variable selection that LASSO regularization performs can tell you which words are important for your prediction problem. The glmnet package also supports parallel processing with very little hassle, so we can train on multiple cores with cross-validation on the training set using `cv.glmnet()`.
+
+```{r}
+library(glmnet)
+library(doMC)
+registerDoMC(cores = 8)
+
+is_jane <- books_joined$title == "Pride and Prejudice"
+model <- cv.glmnet(sparse_words, is_jane, family = "binomial", 
+                   parallel = TRUE, keep = TRUE)
+```
+
+We did it! `r emo::ji("tada")` If you are used to looking at the default plot methods for glmnet's output, here is what we're dealing with.
+
+```{r default1, fig.width=7, fig.height=5}
+plot(model)
+```
+
+
+```{r default2, fig.width=7, fig.height=5}
+plot(model$glmnet.fit)
+```
+
+
+## Understanding and evaluating our model
+
+Those default plots are helpful, but we want to dig more deeply into our model and understand it better. For starters, what predictors are driving the model? Let's use [broom](https://github.com/tidymodels/broom) to check out the coefficients of the model, for the largest value of `lambda` with error within 1 standard error of the minimum.
+
+```{r}
+library(broom)
+
+coefs <- model$glmnet.fit %>%
+    tidy() %>%
+    filter(lambda == model$lambda.1se)
+```
+
+Which coefficents are the largest in size, in each direction?
+
+```{r jane_martians, fig.width=7, fig.height=5}
+coefs %>%
+    group_by(estimate > 0) %>%
+    top_n(10, abs(estimate)) %>%
+    ungroup %>%
+    ggplot(aes(fct_reorder(term, estimate), estimate, fill = estimate > 0)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    labs(x = NULL,
+         title = "Coefficients that increase/decrease probability the most",
+         subtitle = "A document mentioning Martians is unlikely to be written by Jane Austen")
+```
+
+Makes sense, if you ask me!
+
+We want to evaluate how well this model is doing using the **test data** that we held out and did not use for training the model. There are a couple steps to this, but we can deeply understand the performance using the model output and tidy data principles. Let's create a dataframe that tells us, for each document in the test set, the probability of being written by Jane Austen.
+
+```{r}
+intercept <- coefs %>%
+    filter(term == "(Intercept)") %>%
+    pull(estimate)
+
+classifications <- tidy_books %>%
+    inner_join(test_data) %>%
+    inner_join(coefs, by = c("word" = "term")) %>%
+    group_by(document) %>%
+    summarize(score = sum(estimate)) %>%
+    mutate(probability = plogis(intercept + score))
+
+classifications
+```
+
+Now let's use the [yardstick](https://tidymodels.github.io/yardstick/) package to calculate some model performance metrics. For example, what does the [ROC curve](https://en.wikipedia.org/wiki/Receiver_operating_characteristic) look like?
+
+```{r roc_curve, fig.width=7.5, fig.height=6}
+library(yardstick)
+
+comment_classes <- classifications %>%
+    left_join(books %>%
+                  select(title, document), by = "document") %>%
+    mutate(title = as.factor(title))
+
+comment_classes %>% 
+    roc_curve(title, probability) %>%
+    ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+    geom_line(color = "midnightblue",
+              size = 1.5) +
+    geom_abline(lty = 2, alpha = 0.5, 
+                color = "gray50",
+                size = 1.2) + 
+    labs(title = "ROC curve for text classification using regularized regression",
+         subtitle = "Predicting whether text was written by Jane Austen or H.G. Wells")
+```
+
+Looks pretty nice. What is the AUC on the test data?
+
+```{r}
+comment_classes %>%
+    roc_auc(title, probability)
+```
+
+Not shabby.
+
+What about a confusion matrix? Let's use probability of 0.5 as our cutoff point, for example.
+
+```{r}
+comment_classes %>%
+    mutate(prediction = case_when(probability > 0.5 ~ "Pride and Prejudice",
+                                  TRUE ~ "The War of the Worlds"),
+           prediction = as.factor(prediction)) %>%
+    conf_mat(title, prediction)
+```
+
+More text from "The War of the Worlds" was misclassified with this particular cutoff point.
+
+Let's talk about these misclassifications. In the real world, it's usually worth my while to understand a bit about both false negatives and false positives for my models. Which documents here were incorrectly predicted to be written by Jane Austen, at the extreme probability end?
+
+```{r}
+comment_classes %>%
+    filter(probability > .8,
+           title == "The War of the Worlds") %>%
+    sample_n(10) %>%
+    inner_join(books %>%
+                   select(document, text)) %>%
+    select(probability, text)
+```
+
+Some of these are quite short, and some of these I would have difficulty classifying as a human reader quite familiar with these texts.
+
+Which documents here were incorrectly predicted to **not** be written by Jane Austen?
+
+```{r}
+comment_classes %>%
+    filter(probability < .3,
+           title == "Pride and Prejudice") %>%
+    sample_n(10) %>%
+    inner_join(books %>%
+                   select(document, text)) %>%
+    select(probability, text)
+```
+
+These are the texts that are from *Pride and Prejudice* but the model did not correctly identify as such.
+
+## The End
+
+This workflow demonstrates how tidy data principles can be used not just for data cleaning and munging, but for sophisticated machine learning as well. I used my own [tidytext](https://github.com/juliasilge/tidytext) package, and also a couple of packages from the [tidymodels](https://github.com/tidymodels) metapackage which provides lots of valuable functions and infrastructure for this kind of work. One thing I want to note is that my data was not in a tidy data structure the whole time during this process, and that is what I usually find myself doing in real world situations. I use tidy tools to clean and prepare data, then transform to a data structure like a sparse matrix for modeling, then `tidy()` the output of the machine learning algorithm so I can visualize it and understand it in other ways as well. We talk about this [workflow in our book](https://www.tidytextmining.com/dtm.html), and it's one that serves me well in the real world. Thanks to [Alex Hayes](http://www.alexpghayes.com/) for feedback on an early version of this post. Let me know if you have any questions!

@@ -1,0 +1,286 @@
+---
+title: "Text classification with tidy data principles"
+date: 2018-12-24
+slug: "tidy-text-classification"
+tags: [rstats]
+---
+
+
+
+<p>I am an enthusiastic proponent of using <a href="https://www.tidytextmining.com/">tidy data principles for dealing with text data</a>. This kind of approach offers a fluent and flexible option not just for exploratory data analysis, but also for machine learning for text, including both <a href="https://juliasilge.com/blog/evaluating-stm/">unsupervised machine learning</a> and supervised machine learning. I haven’t written much about supervised machine learning for text, i.e. predictive modeling, using tidy data principles, so let’s walk through an example workflow for this a text classification task.</p>
+<p>This post lays out a workflow similar to <a href="https://www.hvitfeldt.me/2018/01/predicting-authorship-in-the-federalist-papers-with-tidytext/">the approach taken by Emil Hvitfeldt</a> in predicting authorship of the Federalist Papers, so be sure to check out that post to see more examples. Also, I’ve been giving some workshops lately that included material on this, such as for <a href="https://github.com/juliasilge/ibm-ai-day">IBM Community Day: AI</a> and at the <a href="https://github.com/juliasilge/deming2018">2018 Deming Conference</a>. I have slides and code available at those links. This material is also some of what we’ll cover in the <a href="https://ww2.amstat.org/meetings/sdss/2019/onlineprogram/Program.cfm?date=05-29-19">short course I am teaching at the SDSS conference in 2019</a> so come on out to Bellevue if you are interested!</p>
+<div id="jane-austen-vs.h.-g.-wells" class="section level2">
+<h2>Jane Austen vs. H. G. Wells</h2>
+<p>Let’s build a supervised machine learning model that learns the difference between text from <em>Pride and Prejudice</em> and text from <em>The War of the Worlds</em>. We can access the full texts of these works from <a href="https://www.gutenberg.org/">Project Gutenberg</a> via the <a href="https://ropensci.org/tutorials/gutenbergr_tutorial/">gutenbergr</a> package.</p>
+<pre class="r"><code>library(tidyverse)
+library(gutenbergr)
+
+titles &lt;- c(
+  &quot;The War of the Worlds&quot;,
+  &quot;Pride and Prejudice&quot;
+)
+books &lt;- gutenberg_works(title %in% titles) %&gt;%
+  gutenberg_download(meta_fields = &quot;title&quot;) %&gt;%
+  mutate(document = row_number())
+
+books</code></pre>
+<pre><code>## # A tibble: 19,504 x 4
+##    gutenberg_id text                                 title         document
+##           &lt;int&gt; &lt;chr&gt;                                &lt;chr&gt;            &lt;int&gt;
+##  1           36 The War of the Worlds                The War of t…        1
+##  2           36 &quot;&quot;                                   The War of t…        2
+##  3           36 by H. G. Wells [1898]                The War of t…        3
+##  4           36 &quot;&quot;                                   The War of t…        4
+##  5           36 &quot;&quot;                                   The War of t…        5
+##  6           36 &quot;     But who shall dwell in these … The War of t…        6
+##  7           36 &quot;     inhabited? .  .  .  Are we or… The War of t…        7
+##  8           36 &quot;     World? .  .  .  And how are a… The War of t…        8
+##  9           36 &quot;          KEPLER (quoted in The An… The War of t…        9
+## 10           36 &quot;&quot;                                   The War of t…       10
+## # ... with 19,494 more rows</code></pre>
+<p>We have the text data now, and let’s frame the kind of prediction problem we are going to work on. Imagine that we take each book and cut it up into lines, like strips of paper (✨ confetti ✨) with an individual line on each paper. Let’s train a model that can take an individual line and give us a probability that this book comes from <em>Pride and Prejudice</em> vs. from <em>The War of the Worlds</em>. As a first step, let’s transform our text data into a <a href="https://www.tidytextmining.com/tidytext.html">tidy format</a>.</p>
+<pre class="r"><code>library(tidytext)
+
+tidy_books &lt;- books %&gt;%
+  unnest_tokens(word, text) %&gt;%
+  group_by(word) %&gt;%
+  filter(n() &gt; 10) %&gt;%
+  ungroup()
+
+tidy_books</code></pre>
+<pre><code>## # A tibble: 159,707 x 4
+##    gutenberg_id title                 document word 
+##           &lt;int&gt; &lt;chr&gt;                    &lt;int&gt; &lt;chr&gt;
+##  1           36 The War of the Worlds        1 the  
+##  2           36 The War of the Worlds        1 war  
+##  3           36 The War of the Worlds        1 of   
+##  4           36 The War of the Worlds        1 the  
+##  5           36 The War of the Worlds        3 by   
+##  6           36 The War of the Worlds        6 but  
+##  7           36 The War of the Worlds        6 who  
+##  8           36 The War of the Worlds        6 shall
+##  9           36 The War of the Worlds        6 in   
+## 10           36 The War of the Worlds        6 these
+## # ... with 159,697 more rows</code></pre>
+<p>We’ve also removed the rarest words in that step, keeping only words in our dataset that occur more than 10 times total over both books.</p>
+<p>The tidy data structure is a great fit for performing exploratory data analysis, making lots of plots, and deeply understanding what is in the dataset we would like to use for modeling. In interest of space, let’s just show one example plot we could use for EDA, looking at the most frequent words in each book after removing stop words.</p>
+<pre class="r"><code>tidy_books %&gt;%
+  count(title, word, sort = TRUE) %&gt;%
+  anti_join(get_stopwords()) %&gt;%
+  group_by(title) %&gt;%
+  top_n(20) %&gt;%
+  ungroup() %&gt;%
+  ggplot(aes(reorder_within(word, n, title), n,
+    fill = title
+  )) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  scale_x_reordered() +
+  coord_flip() +
+  facet_wrap(~title, scales = &quot;free&quot;) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x = NULL, y = &quot;Word count&quot;,
+    title = &quot;Most frequent words after removing stop words&quot;,
+    subtitle = &quot;Words like &#39;said&#39; occupy similar ranks but other words are quite different&quot;
+  )</code></pre>
+<p><img src="/blog/2018/2018-12-24-tidy-text-classification_files/figure-html/frequent_words-1.png" width="2700" /></p>
+<p>We could perform other kinds of EDA like looking at <a href="https://www.tidytextmining.com/tfidf.html">tf-idf by book</a> but we’ll stop here for now and move on to building a classification model.</p>
+</div>
+<div id="building-a-machine-learning-model" class="section level2">
+<h2>Building a machine learning model</h2>
+<p>Let’s get this data ready for modeling. We want to split our data into training and testing sets, to use for building the model and evaluating the model. Here I use the <a href="https://tidymodels.github.io/rsample/">rsample</a> package to split the data; it works great with a tidy data workflow. Let’s go back to the <code>books</code> dataset (not the <code>tidy_books</code> dataset) because the lines of text are our individual observations.</p>
+<pre class="r"><code>library(rsample)
+
+books_split &lt;- books %&gt;%
+  select(document) %&gt;%
+  initial_split()
+train_data &lt;- training(books_split)
+test_data &lt;- testing(books_split)</code></pre>
+<p>You can also use functions from the rsample package to generate resampled datasets, but the specific modeling approach we’re going to use will do that for us so we only need a simple train/test split.</p>
+<p>Now we want to transform our <strong>training data</strong> from a tidy data structure to a sparse matrix to use for our machine learning algorithm.</p>
+<pre class="r"><code>sparse_words &lt;- tidy_books %&gt;%
+  count(document, word) %&gt;%
+  inner_join(train_data) %&gt;%
+  cast_sparse(document, word, n)
+
+class(sparse_words)</code></pre>
+<pre><code>## [1] &quot;dgCMatrix&quot;
+## attr(,&quot;package&quot;)
+## [1] &quot;Matrix&quot;</code></pre>
+<pre class="r"><code>dim(sparse_words)</code></pre>
+<pre><code>## [1] 12028  1652</code></pre>
+<p>We have 12,028 training observations and 1652 features at this point; text feature space handled in this way is very high dimensional, so we need to take that into account when considering our modeling approach.</p>
+<p>One reason this overall approach is flexible and wonderful is that you could at this point <code>cbind()</code> other columns, such as non-text numeric data, onto this sparse matrix. Then you can use this combination of text and non-text data as your predictors in the machine learning algorithm, and the regularized regression algorithm we are going to use will find which are important for your problem space. I’ve experienced great results with my real world prediction problems using this approach.</p>
+<p>We also need to build a dataframe with a response variable to associate each of the <code>rownames()</code> of the sparse matrix with a title, to use as the quantity we will predict in the model.</p>
+<pre class="r"><code>word_rownames &lt;- as.integer(rownames(sparse_words))
+
+books_joined &lt;- data_frame(document = word_rownames) %&gt;%
+  left_join(books %&gt;%
+    select(document, title))</code></pre>
+<p>Now it’s time to train our classification model! Let’s use the <a href="https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html">glmnet</a> package to fit a logistic regression model with <a href="https://en.wikipedia.org/wiki/Lasso_(statistics)">LASSO regularization</a>. It’s a great fit for text classification because the variable selection that LASSO regularization performs can tell you which words are important for your prediction problem. The glmnet package also supports parallel processing with very little hassle, so we can train on multiple cores with cross-validation on the training set using <code>cv.glmnet()</code>.</p>
+<pre class="r"><code>library(glmnet)
+library(doMC)
+registerDoMC(cores = 8)
+
+is_jane &lt;- books_joined$title == &quot;Pride and Prejudice&quot;
+model &lt;- cv.glmnet(sparse_words, is_jane,
+  family = &quot;binomial&quot;,
+  parallel = TRUE, keep = TRUE
+)</code></pre>
+<p>We did it! 🎉 If you are used to looking at the default plot methods for glmnet’s output, here is what we’re dealing with.</p>
+<pre class="r"><code>plot(model)</code></pre>
+<p><img src="/blog/2018/2018-12-24-tidy-text-classification_files/figure-html/default1-1.png" width="2100" /></p>
+<pre class="r"><code>plot(model$glmnet.fit)</code></pre>
+<p><img src="/blog/2018/2018-12-24-tidy-text-classification_files/figure-html/default2-1.png" width="2100" /></p>
+</div>
+<div id="understanding-and-evaluating-our-model" class="section level2">
+<h2>Understanding and evaluating our model</h2>
+<p>Those default plots are helpful, but we want to dig more deeply into our model and understand it better. For starters, what predictors are driving the model? Let’s use <a href="https://github.com/tidymodels/broom">broom</a> to check out the coefficients of the model, for the largest value of <code>lambda</code> with error within 1 standard error of the minimum.</p>
+<pre class="r"><code>library(broom)
+
+coefs &lt;- model$glmnet.fit %&gt;%
+  tidy() %&gt;%
+  filter(lambda == model$lambda.1se)</code></pre>
+<p>Which coefficents are the largest in size, in each direction?</p>
+<pre class="r"><code>coefs %&gt;%
+  group_by(estimate &gt; 0) %&gt;%
+  top_n(10, abs(estimate)) %&gt;%
+  ungroup() %&gt;%
+  ggplot(aes(fct_reorder(term, estimate), estimate, fill = estimate &gt; 0)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  coord_flip() +
+  labs(
+    x = NULL,
+    title = &quot;Coefficients that increase/decrease probability the most&quot;,
+    subtitle = &quot;A document mentioning Martians is unlikely to be written by Jane Austen&quot;
+  )</code></pre>
+<p><img src="/blog/2018/2018-12-24-tidy-text-classification_files/figure-html/jane_martians-1.png" width="2100" /></p>
+<p>Makes sense, if you ask me!</p>
+<p>We want to evaluate how well this model is doing using the <strong>test data</strong> that we held out and did not use for training the model. There are a couple steps to this, but we can deeply understand the performance using the model output and tidy data principles. Let’s create a dataframe that tells us, for each document in the test set, the probability of being written by Jane Austen.</p>
+<pre class="r"><code>intercept &lt;- coefs %&gt;%
+  filter(term == &quot;(Intercept)&quot;) %&gt;%
+  pull(estimate)
+
+classifications &lt;- tidy_books %&gt;%
+  inner_join(test_data) %&gt;%
+  inner_join(coefs, by = c(&quot;word&quot; = &quot;term&quot;)) %&gt;%
+  group_by(document) %&gt;%
+  summarize(score = sum(estimate)) %&gt;%
+  mutate(probability = plogis(intercept + score))
+
+classifications</code></pre>
+<pre><code>## # A tibble: 4,004 x 3
+##    document  score probability
+##       &lt;int&gt;  &lt;dbl&gt;       &lt;dbl&gt;
+##  1        1 -1.83      0.170  
+##  2        8 -1.02      0.317  
+##  3       19  0.502     0.679  
+##  4       21 -1.83      0.170  
+##  5       25 -0.983     0.324  
+##  6       28 -1.78      0.178  
+##  7       30 -5.29      0.00643
+##  8       31 -3.03      0.0584 
+##  9       48  2.89      0.958  
+## 10       49 -2.88      0.0675 
+## # ... with 3,994 more rows</code></pre>
+<p>Now let’s use the <a href="https://tidymodels.github.io/yardstick/">yardstick</a> package to calculate some model performance metrics. For example, what does the <a href="https://en.wikipedia.org/wiki/Receiver_operating_characteristic">ROC curve</a> look like?</p>
+<pre class="r"><code>library(yardstick)
+
+comment_classes &lt;- classifications %&gt;%
+  left_join(books %&gt;%
+    select(title, document), by = &quot;document&quot;) %&gt;%
+  mutate(title = as.factor(title))
+
+comment_classes %&gt;%
+  roc_curve(title, probability) %&gt;%
+  ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+  geom_line(
+    color = &quot;midnightblue&quot;,
+    size = 1.5
+  ) +
+  geom_abline(
+    lty = 2, alpha = 0.5,
+    color = &quot;gray50&quot;,
+    size = 1.2
+  ) +
+  labs(
+    title = &quot;ROC curve for text classification using regularized regression&quot;,
+    subtitle = &quot;Predicting whether text was written by Jane Austen or H.G. Wells&quot;
+  )</code></pre>
+<p><img src="/blog/2018/2018-12-24-tidy-text-classification_files/figure-html/roc_curve-1.png" width="2250" /></p>
+<p>Looks pretty nice. What is the AUC on the test data?</p>
+<pre class="r"><code>comment_classes %&gt;%
+  roc_auc(title, probability)</code></pre>
+<pre><code>## # A tibble: 1 x 3
+##   .metric .estimator .estimate
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+## 1 roc_auc binary         0.978</code></pre>
+<p>Not shabby.</p>
+<p>What about a confusion matrix? Let’s use probability of 0.5 as our cutoff point, for example.</p>
+<pre class="r"><code>comment_classes %&gt;%
+  mutate(
+    prediction = case_when(
+      probability &gt; 0.5 ~ &quot;Pride and Prejudice&quot;,
+      TRUE ~ &quot;The War of the Worlds&quot;
+    ),
+    prediction = as.factor(prediction)
+  ) %&gt;%
+  conf_mat(title, prediction)</code></pre>
+<pre><code>##                        Truth
+## Prediction              Pride and Prejudice The War of the Worlds
+##   Pride and Prejudice                  2508                   180
+##   The War of the Worlds                 122                  1194</code></pre>
+<p>More text from “The War of the Worlds” was misclassified with this particular cutoff point.</p>
+<p>Let’s talk about these misclassifications. In the real world, it’s usually worth my while to understand a bit about both false negatives and false positives for my models. Which documents here were incorrectly predicted to be written by Jane Austen, at the extreme probability end?</p>
+<pre class="r"><code>comment_classes %&gt;%
+  filter(
+    probability &gt; .8,
+    title == &quot;The War of the Worlds&quot;
+  ) %&gt;%
+  sample_n(10) %&gt;%
+  inner_join(books %&gt;%
+    select(document, text)) %&gt;%
+  select(probability, text)</code></pre>
+<pre><code>## # A tibble: 10 x 2
+##    probability text                                                        
+##          &lt;dbl&gt; &lt;chr&gt;                                                       
+##  1       0.870 excited by the opening of the line of communication, which …
+##  2       0.865 it was to attempt this crossing.  He turned to Miss Elphins…
+##  3       0.892 the innkeeper, she would, I think, have urged me to stay in 
+##  4       0.817 &quot;\&quot;No doubt lots who had money have gone away to France,\&quot; …
+##  5       0.877 The thought of the confined creature was so dreadful to him…
+##  6       0.915 they did not wish to destroy the country but only to crush …
+##  7       0.905 gunners, unseasoned artillery volunteers who ought never to…
+##  8       0.851 verily believe that to the very end this spoiled child of l…
+##  9       0.840 brim of which quivered and panted, and dropped saliva.  The…
+## 10       0.829 was as if something turned over, and the point of view alte…</code></pre>
+<p>Some of these are quite short, and some of these I would have difficulty classifying as a human reader quite familiar with these texts.</p>
+<p>Which documents here were incorrectly predicted to <strong>not</strong> be written by Jane Austen?</p>
+<pre class="r"><code>comment_classes %&gt;%
+  filter(
+    probability &lt; .3,
+    title == &quot;Pride and Prejudice&quot;
+  ) %&gt;%
+  sample_n(10) %&gt;%
+  inner_join(books %&gt;%
+    select(document, text)) %&gt;%
+  select(probability, text)</code></pre>
+<pre><code>## # A tibble: 10 x 2
+##    probability text                                                        
+##          &lt;dbl&gt; &lt;chr&gt;                                                       
+##  1      0.186  But here, by carrying with me one ceaseless source of regre…
+##  2      0.124  arrival at Lambton, these visitors came. They had been walk…
+##  3      0.178  of fancy, the streets of that gay bathing-place covered wit…
+##  4      0.275  mention an officer above once a day, unless, by some cruel …
+##  5      0.160  the slightest suspicion. I told him, moreover, that I belie…
+##  6      0.212  behalf of the interested people who have probably been conc…
+##  7      0.0639 occasional appearance of some trout in the water, and talki…
+##  8      0.162  are instituted by the Church of England. As a clergyman, mo…
+##  9      0.116  walking slowly towards the house.                           
+## 10      0.210  it seems but a fortnight I declare; and yet there have been…</code></pre>
+<p>These are the texts that are from <em>Pride and Prejudice</em> but the model did not correctly identify as such.</p>
+</div>
+<div id="the-end" class="section level2">
+<h2>The End</h2>
+<p>This workflow demonstrates how tidy data principles can be used not just for data cleaning and munging, but for sophisticated machine learning as well. I used my own <a href="https://github.com/juliasilge/tidytext">tidytext</a> package, and also a couple of packages from the <a href="https://github.com/tidymodels">tidymodels</a> metapackage which provides lots of valuable functions and infrastructure for this kind of work. One thing I want to note is that my data was not in a tidy data structure the whole time during this process, and that is what I usually find myself doing in real world situations. I use tidy tools to clean and prepare data, then transform to a data structure like a sparse matrix for modeling, then <code>tidy()</code> the output of the machine learning algorithm so I can visualize it and understand it in other ways as well. We talk about this <a href="https://www.tidytextmining.com/dtm.html">workflow in our book</a>, and it’s one that serves me well in the real world. Thanks to <a href="http://www.alexpghayes.com/">Alex Hayes</a> for feedback on an early version of this post. Let me know if you have any questions!</p>
+</div>

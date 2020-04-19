@@ -1,0 +1,305 @@
+---
+title: "Word associations from the Small World of Words"
+date: 2018-12-16
+slug: "word-associations"
+tags: [rstats]
+---
+
+
+
+<p>Do you subscribe to the <a href="https://tinyletter.com/data-is-plural">Data is Plural</a> newsletter from <a href="https://www.jsvine.com/">Jeremy Singer-Vine</a>? You probably should, because it is a treasure trove of interesting datasets arriving in your email inbox. In the November 28 edition, Jeremy linked to the <a href="https://smallworldofwords.org/en">Small World of Words</a> project, and I was entranced. I love stuff like that, all about words and how people think of them. I have been mulling around a blog post ever since, and today I finally have my post done, so let’s see what’s up!</p>
+<div id="its-a-small-world" class="section level2">
+<h2>It’s a Small World</h2>
+<p>The Small World of Words project focuses on word associations. You can <a href="https://smallworldofwords.org/en">try it out for yourself</a> to see how it works, but the general idea is that the participant is presented with a word (from “telephone” to “journalist” to “yoga”) and is then asked to give their immediate association with that word. The project has collected more than 15 million responses to date, and is still collecting data. You can <a href="https://smallworldofwords.org/en/project/visualize">check out some pre-built visualizations</a> the researchers have put together to explore the dataset, or you can <a href="https://smallworldofwords.org/en/project/research">download the data for yourself</a>.</p>
+<pre class="r"><code>library(tidyverse)
+
+swow_raw &lt;- read_csv(&quot;SWOW-EN.R100.csv&quot;) %&gt;%
+    select(-education, -X1) %&gt;%
+    mutate(gender = case_when(gender == &quot;Fe&quot; ~ &quot;Women&quot;,
+                              gender == &quot;Ma&quot; ~ &quot;Men&quot;,
+                              gender == &quot;X&quot; ~ &quot;Non-binary&quot;),
+           gender = fct_infreq(gender))
+
+swow_raw</code></pre>
+<pre><code>## # A tibble: 1,228,200 x 11
+##       id participantID   age gender nativeLanguage country   created_at          cue      R1           R2     
+##    &lt;dbl&gt;         &lt;dbl&gt; &lt;dbl&gt; &lt;fct&gt;  &lt;chr&gt;          &lt;chr&gt;     &lt;dttm&gt;              &lt;chr&gt;    &lt;chr&gt;        &lt;chr&gt;  
+##  1    29             3    33 Women  United States  Australia 2011-08-12 02:19:38 although nevertheless yet    
+##  2    30             3    33 Women  United States  Australia 2011-08-12 02:19:38 deal     no           cards  
+##  3    31             3    33 Women  United States  Australia 2011-08-12 02:19:38 music    notes        band   
+##  4    32             3    33 Women  United States  Australia 2011-08-12 02:19:38 inform   tell         rat on 
+##  5    33             3    33 Women  United States  Australia 2011-08-12 02:19:38 way      path         via    
+##  6    34             3    33 Women  United States  Australia 2011-08-12 02:19:38 none     zilch        nada   
+##  7    35             3    33 Women  United States  Australia 2011-08-12 02:19:38 extra    plus         special
+##  8    36             3    33 Women  United States  Australia 2011-08-12 02:19:38 will     free         future 
+##  9    37             3    33 Women  United States  Australia 2011-08-12 02:19:38 paper    book         news   
+## 10    38             3    33 Women  United States  Australia 2011-08-12 02:19:38 w        v            x      
+##    R3        
+##    &lt;chr&gt;     
+##  1 but       
+##  2 shake     
+##  3 rhythm    
+##  4 &lt;NA&gt;      
+##  5 method    
+##  6 zero      
+##  7 additional
+##  8 death     
+##  9 writing   
+## 10 what      
+## # ... with 1,228,190 more rows</code></pre>
+<p>The available dataset as it exists when I downloaded it includes 1,228,200 word associations (each of which involve four words, i.e. three connections) by 83,864 unique participants. When a participant starts on a word association, this project has them move forward through three hops in a chain, from <code>cue</code> to <code>R1</code> to <code>R2</code> to <code>R3</code>, and then start over with a new <code>cue</code>. Participants can go through many cues in any given session.</p>
+<p>Participants can also report other information about themselves. For example, what is the age distribution?</p>
+<pre class="r"><code>median_age &lt;- swow_raw %&gt;%
+    distinct(participantID, age) %&gt;% 
+    pull(age) %&gt;% 
+    median()
+
+swow_raw %&gt;%
+    distinct(participantID, age) %&gt;%
+    ggplot(aes(age)) +
+    geom_histogram(alpha = 0.8, binwidth = 5, fill = &quot;midnightblue&quot;) +
+    labs(title = &quot;Age distribution of Small World of Words participants&quot;,
+         subtitle = paste(&quot;The median age is&quot;, median_age))</code></pre>
+<p><img src="/blog/2018/2018-12-16-word-associations_files/figure-html/swow_age-1.png" width="2400" /></p>
+<p>There are lots of young folks represented in this project, as is typical for online surveys. What about gender?</p>
+<pre class="r"><code>swow_raw %&gt;%
+    distinct(participantID, gender) %&gt;%
+    count(gender) %&gt;%
+    mutate(Percent = n / sum(n)) %&gt;%
+    ggplot(aes(fct_reorder(gender, n), Percent)) +
+    geom_col(alpha = 0.8, fill = &quot;midnightblue&quot;) +
+    coord_flip() +
+    scale_y_continuous(labels = percent_format(),
+                       expand = c(0,0)) +
+    labs(x = NULL, y = &quot;% of participants&quot;,
+         title = &quot;Gender distribution of Small World of Words participants&quot;,
+         subtitle = &quot;More than 60% of participants identify as women&quot;)</code></pre>
+<p><img src="/blog/2018/2018-12-16-word-associations_files/figure-html/swow_gender-1.png" width="2100" /></p>
+<p>In this project, women were more likely to participate than other genders.</p>
+<p>This project is international, pulling participants from many native languages. It also allows folks to specify whether they are a US English speaker, a UK English speaker, etc.</p>
+<pre class="r"><code>native_languages &lt;- swow_raw %&gt;% 
+    distinct(participantID, nativeLanguage) %&gt;% 
+    pull(nativeLanguage)
+
+swow_raw %&gt;%
+    distinct(participantID, nativeLanguage) %&gt;%
+    count(nativeLanguage) %&gt;%
+    top_n(15) %&gt;%
+    ggplot(aes(fct_reorder(nativeLanguage, n), n)) +
+    geom_col(alpha = 0.8, fill = &quot;midnightblue&quot;) +
+    coord_flip() +
+    scale_y_continuous(labels = comma_format(),
+                       expand = c(0,0)) +
+    labs(x = NULL, y = &quot;Number of participants&quot;,
+         title = &quot;Native languages of Small World of Words participants&quot;,
+         subtitle = paste(&quot;About&quot;, percent(mean(native_languages == &quot;United States&quot;)),
+                          &quot;of participants say their native language is US English&quot;))</code></pre>
+<p><img src="/blog/2018/2018-12-16-word-associations_files/figure-html/swow_native-1.png" width="2250" /></p>
+<p>So that’s a little bit of EDA to understand this project and its participants. Now let’s dig into the word associations!</p>
+</div>
+<div id="building-forward-associations" class="section level2">
+<h2>Building forward associations</h2>
+<p>This is a rich, detailed dataset and there are so many directions we could go with it. In taking a first stab, let’s look at all the forward associations in the whole project. This means we will treat the “hop” from the cue to the first association the same as the “hop” from the first to second association, which certainly isn’t entirely correct. It’s a choice to start from, though.</p>
+<pre class="r"><code>swow_forward &lt;- swow_raw %&gt;% 
+    select(from = cue, to = R1, gender, age, nativeLanguage) %&gt;%
+    bind_rows(
+        swow_raw %&gt;% 
+            select(from = R1, to = R2, gender, age, nativeLanguage)
+    ) %&gt;%
+    bind_rows(
+        swow_raw %&gt;% 
+            select(from = R2, to = R3, gender, age, nativeLanguage)
+    ) %&gt;%
+    filter(!is.na(to))
+
+swow_forward</code></pre>
+<pre><code>## # A tibble: 3,403,790 x 5
+##    from     to           gender   age nativeLanguage
+##    &lt;chr&gt;    &lt;chr&gt;        &lt;fct&gt;  &lt;dbl&gt; &lt;chr&gt;         
+##  1 although nevertheless Women     33 United States 
+##  2 deal     no           Women     33 United States 
+##  3 music    notes        Women     33 United States 
+##  4 inform   tell         Women     33 United States 
+##  5 way      path         Women     33 United States 
+##  6 none     zilch        Women     33 United States 
+##  7 extra    plus         Women     33 United States 
+##  8 will     free         Women     33 United States 
+##  9 paper    book         Women     33 United States 
+## 10 w        v            Women     33 United States 
+## # ... with 3,403,780 more rows</code></pre>
+<p>Now that we have all the forward associations, we can find the most common associations for any individual word with some simple dplyr operations. What about… coffee? ☕</p>
+<pre class="r"><code>swow_forward %&gt;%
+    filter(from == &quot;coffee&quot;) %&gt;%
+    count(to, sort = TRUE)</code></pre>
+<pre><code>## # A tibble: 711 x 2
+##    to            n
+##    &lt;chr&gt;     &lt;int&gt;
+##  1 tea          80
+##  2 milk         33
+##  3 drink        31
+##  4 Starbucks    28
+##  5 caffeine     15
+##  6 cup          15
+##  7 morning      15
+##  8 hot          13
+##  9 chocolate    12
+## 10 island       12
+## # ... with 701 more rows</code></pre>
+<iframe src="https://giphy.com/embed/xUPOqoAS6yizym0CHu" width="480" height="360" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+<p>
+<a href="https://giphy.com/gifs/gilmoregirls-netflix-gilmore-girls-xUPOqoAS6yizym0CHu">via GIPHY</a>
+</p>
+<p>Or… maybe you are in a holiday Christmas celebratory mood, and want to know what people associate with the word “Christmas”.</p>
+<pre class="r"><code>swow_forward %&gt;%
+    filter(from == &quot;Christmas&quot;) %&gt;%
+    count(to, sort = TRUE)</code></pre>
+<pre><code>## # A tibble: 759 x 2
+##    to           n
+##    &lt;chr&gt;    &lt;int&gt;
+##  1 birthday    56
+##  2 holiday     45
+##  3 tree        43
+##  4 Santa       34
+##  5 snow        33
+##  6 happy       31
+##  7 red         29
+##  8 presents    28
+##  9 winter      24
+## 10 Jesus       19
+## # ... with 749 more rows</code></pre>
+<iframe src="https://giphy.com/embed/MrxXXBriEIKBO" width="480" height="372" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+<p>
+<a href="https://giphy.com/gifs/christmas-will-ferrell-elf-MrxXXBriEIKBO">via GIPHY</a>
+</p>
+</div>
+<div id="comparing-groups" class="section level2">
+<h2>Comparing groups</h2>
+<p>This project recorded information about the participants themselves, so we can dig into how different kinds of people associate words. For example, let’s start with gender and comparing folks who identify as men and women. What differences do we see with the word “water”?</p>
+<pre class="r"><code>swow_forward %&gt;%
+    filter(from == &quot;water&quot;,
+           gender %in% c(&quot;Men&quot;, &quot;Women&quot;)) %&gt;%
+    group_by(to) %&gt;%
+    filter(n() &gt; 30) %&gt;%
+    ungroup %&gt;%
+    count(gender, to, sort = TRUE) %&gt;%
+    spread(gender, n, fill = 0) %&gt;%
+    mutate_if(is.numeric, funs((. + 1) / (sum(.) + 1))) %&gt;%
+    mutate(logratio = log2(Women / Men)) %&gt;%
+    top_n(15, abs(logratio)) %&gt;%
+    ggplot(aes(fct_reorder(to, logratio), logratio, 
+               fill = logratio &lt; 0)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    labs(x = NULL, y  = &quot;log odds ratio (Women/Men)&quot;,
+         title = &quot;What words do Small World of Words&#39; participants associate with water?&quot;,
+         subtitle = &quot;Women are more likely to mention sinks and baths\nMen are more likely to say steam and air&quot;) </code></pre>
+<p><img src="/blog/2018/2018-12-16-word-associations_files/figure-html/gender_water-1.png" width="2700" /></p>
+<p>Notice the dramatic contrasts between domestic water uses like sinks and baths with more scientific word about water like steam. We see how socialized and differentiated women’s language is, even with something that seems neutral like water.</p>
+<p>What about differences between US and UK English?</p>
+<pre class="r"><code>swow_forward %&gt;%
+    filter(from == &quot;love&quot;,
+           nativeLanguage %in% c(&quot;United States&quot;, &quot;United Kingdom&quot;)) %&gt;%
+    group_by(to) %&gt;%
+    filter(n() &gt; 30) %&gt;%
+    ungroup %&gt;%
+    count(nativeLanguage, to, sort = TRUE) %&gt;%
+    spread(nativeLanguage, n, fill = 0) %&gt;%
+    mutate_if(is.numeric, funs((. + 1) / (sum(.) + 1))) %&gt;%
+    mutate(logratio = log2(`United States` / `United Kingdom`)) %&gt;%
+    ggplot(aes(fct_reorder(to, logratio), logratio, 
+               fill = logratio &lt; 0)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    labs(x = NULL, y  = &quot;log odds ratio (US/UK)&quot;,
+         title = &quot;What words do Small World of Words&#39; participants associate with love?&quot;,
+         subtitle = &quot;US participants associate love with hate\nUK participants feel more affectionate&quot;) </code></pre>
+<p><img src="/blog/2018/2018-12-16-word-associations_files/figure-html/native_love-1.png" width="2700" /></p>
+<p>Well, alrighty then. 😳</p>
+</div>
+<div id="changes-with-age" class="section level2">
+<h2>Changes with age</h2>
+<p>We can apply some functional programming and modeling to look at how these word associations change with age. Let’s take the word “money”, and start by calculating, for 5-year bins, the number and proportion of words associated for each bin.</p>
+<pre class="r"><code>swow_freq &lt;- swow_forward %&gt;%
+    filter(from == &quot;money&quot;,
+           age &lt; 80) %&gt;%
+    mutate(age = age %/% 5 * 5) %&gt;%
+    count(age, to) %&gt;%
+    complete(age, to, fill = list(n = 0)) %&gt;%
+    group_by(age) %&gt;%
+    mutate(age_total = sum(n),
+           percent = n / age_total) %&gt;%
+    ungroup %&gt;%
+    group_by(to) %&gt;%
+    filter(sum(n) &gt; 25) %&gt;%
+    ungroup
+
+swow_freq</code></pre>
+<pre><code>## # A tibble: 741 x 5
+##      age to           n age_total percent
+##    &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;
+##  1    15 bank        47      1118 0.0420 
+##  2    15 banks        7      1118 0.00626
+##  3    15 bills        2      1118 0.00179
+##  4    15 business    11      1118 0.00984
+##  5    15 buy          7      1118 0.00626
+##  6    15 car          4      1118 0.00358
+##  7    15 cash        30      1118 0.0268 
+##  8    15 change       5      1118 0.00447
+##  9    15 charity      5      1118 0.00447
+## 10    15 cheap        5      1118 0.00447
+## # ... with 731 more rows</code></pre>
+<p>Now let’s fit some models using <code>glm()</code> since this is count data to predict the counts out of the total for each age bin from the age. We can then <code>tidy()</code> the output of the modeling, adjust the p-values for multiple comparisons since we looked at a bunch of words at one time, and make a volcano-style plot to compare the effect size with the p-value.</p>
+<pre class="r"><code>library(broom)
+library(ggrepel)
+
+slopes &lt;- swow_freq %&gt;%
+    nest(-to) %&gt;%
+    mutate(models = map(data, ~ glm(cbind(n, age_total) ~ age, ., 
+                                    family = &quot;binomial&quot;))) %&gt;%
+    unnest(map(models, tidy)) %&gt;%
+    filter(term == &quot;age&quot;) %&gt;%
+    arrange(estimate) %&gt;%
+    mutate(p.value = p.adjust(p.value))
+
+slopes %&gt;%
+    ggplot(aes(estimate, p.value)) +
+    geom_vline(xintercept = 0, lty = 2, alpha = 0.7, color = &quot;gray50&quot;) +
+    geom_point(color = &quot;midnightblue&quot;, alpha = 0.8, size = 2.5) +
+    scale_y_log10() +
+    geom_text(data = filter(slopes,
+                            p.value &gt;= 0.5),
+              aes(label = to),
+              family = &quot;IBMPlexSans&quot;,
+              vjust = 0, nudge_y = 0.02,
+              check_overlap = TRUE) +
+    geom_text_repel(data = filter(slopes,
+                                  p.value &lt; 0.5),
+                    aes(label = to),
+                    family = &quot;IBMPlexSans&quot;) +
+    labs(x = &quot;Estimated change with age&quot;,
+         y = &quot;Adjusted p-value&quot;,
+         title = &quot;What words do Small World of Words&#39; participants associate with money?&quot;,
+         subtitle = &quot;Older participants are more likely to say stocks or dollars\nYounger participants are more likely to talk about a job or the color green&quot;)</code></pre>
+<p><img src="/blog/2018/2018-12-16-word-associations_files/figure-html/slopes_volcano-1.png" width="2550" /></p>
+<p>The younger someone is, the more likely they are to associate money with a job, or the color green or gold. The older someone is, the more likely they are to associate money with dollars and stocks. Let’s look at the top terms associated with money that exhibit change with age in terms of a small p-value.</p>
+<pre class="r"><code>slopes %&gt;%
+    top_n(6, -p.value) %&gt;%
+    inner_join(swow_freq) %&gt;%
+    ggplot(aes(age, percent)) +
+    geom_point() +
+    geom_smooth() +
+    facet_wrap(~ to) +
+    scale_y_continuous(labels = percent_format()) +
+    labs(x = &quot;Age of participant&quot;,
+         y = &quot;Frequency of word in association with money&quot;,
+         title = &quot;What words do Small World of Words&#39; participants associate with money?&quot;,
+         subtitle = &quot;Words like debt and gold decrease in frequency with age&quot;)</code></pre>
+<p><img src="/blog/2018/2018-12-16-word-associations_files/figure-html/top_four-1.png" width="3000" /></p>
+<p>Younger respondents were more likely to associate words like DEBT with money. 😵</p>
+</div>
+<div id="the-end" class="section level2">
+<h2>The End</h2>
+<p>There is so much more that could be done with this dataset. You could build a network data structure between the words and do various kinds of network analysis, and I didn’t touch any of the differences in the intial cue vs. the later hops. Notice that this dataset is all about words, but I didn’t ever load the <a href="https://cran.r-project.org/package=tidytext">tidytext</a> package for this analysis. The researchers who built this dataset have already done much of the hard work of processing this data, and it is more like structured data that happens to be about language, rather than unstructured text data. Let me know if you have any questions!</p>
+</div>

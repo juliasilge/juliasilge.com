@@ -1,0 +1,70 @@
+---
+title: "New sports from random emoji"
+date: 2017-11-25
+slug: "emoji-sports"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+options(width=80, dplyr.width = 150)
+library(ggplot2)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+I love emoji `r emo::ji("heart")` and I love xkcd, so [this recent comic](https://xkcd.com/1920/) from Randall Munroe was quite a delight for me.
+
+![](https://imgs.xkcd.com/comics/emoji_sports.png )
+
+I sat there, enjoying the thought of these new sports like horse hole and multiplayer avocado and I thought, "I can make more of these in just the barest handful of lines of code". This is largely thanks to the [emo](https://github.com/hadley/emo) package by Hadley Wickham, which if you haven't installed and started using yet, WHY NOT??? `r emo::ji("scream")`
+
+```{r}
+emoji_sports <- function(n) {
+    data <- dplyr::sample_n(emo::jis, n)
+    emo::ji_glue(paste(dplyr::pull(data, emoji),
+                       collapse = ""))
+}
+```
+
+This function uses the `jis` dataset from the emo package, sample a few of them, and then prints them out in a R Markdown document, which is what I use to blog.  Let's make some!
+
+
+## `r emoji_sports(3)`
+
+
+Excellent. This new sport is a head injury formalwear competition; it's judged very strictly.
+
+## `r emoji_sports(3)`
+
+Here we see the new sport of being thankful for Senegalese culture.
+
+## `r emoji_sports(3)`
+
+
+This new sport is a scary one, where stars are awarded to the baby chicks with the best knife-throwing skills.
+
+
+Some of the sports in the xkcd comic have only two characters, and we can make those as well.
+
+
+## `r emoji_sports(2)`
+
+Ah yes, we'll soon all be enjoying the sport of running long distances for no understandable reason. I think some of you probably *already* enjoy this sport.
+
+
+Or we can generate lots with purrr.
+
+```{r}
+library(purrr)
+
+map(sample(c(2,3), 10, replace = TRUE),
+    emoji_sports)
+```
+
+Some of those emojis aren't printing quite as well, but there are definitely some winners (timed spiderweb fingerknitting and the like).
+
+I could keep going all day, but I'll wrap it up here. `r emo::ji("wave")` Let me know if you have any questions!

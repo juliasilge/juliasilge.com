@@ -1,0 +1,241 @@
+---
+title: "Training, evaluating, and interpreting topic models"
+date: 2018-09-08
+slug: "evaluating-stm"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE)
+options(width=120, dplyr.width = 150)
+library(ggplot2)
+library(scales)
+library(silgelib)
+theme_set(theme_plex())
+project <- "my-first-project-184003"
+```
+
+At the beginning of this year, I wrote a blog post about how to get started with the [stm and tidytext packages for topic modeling](https://juliasilge.com/blog/sherlock-holmes-stm/). I have been doing more topic modeling in various projects, so I wanted to share some workflows I have found useful for
+
+- training many topic models at one time,
+- evaluating topic models and understanding model diagnostics, and
+- exploring and interpreting the content of topic models.
+
+I've been doing all my topic modeling with [Structural Topic Models](http://www.structuraltopicmodel.com/) and the [stm](https://cran.r-project.org/package=stm) package lately, and it has been `r emo::ji("sparkles")`GREAT`r emo::ji("sparkles")`. One thing I am not going to cover in this blog post is how to use document-level covariates in topic modeling, i.e., how to train a model with topics that can vary with some continuous or categorical characteristic of your documents. I hope to build up some posts about that, but in the meantime, you can check out the [stm vignette](https://cran.r-project.org/web/packages/stm/vignettes/stmVignette.pdf) and perhaps [Carsten Schwemmer's Shiny app](https://github.com/methodds/stminsights) for more details on this.
+
+## Modeling the Hacker News corpus
+
+In my last blog post, I demonstrated how to get started with about a book's worth of text, which is a TEENY TINY amount of text for a topic model. This time around, I'd like to demonstrate how to go about interpreting results with a more realistic set of text, something more like what you might actually want to model topics with in the real world, so let's turn to the [Hacker news corpus](https://cloud.google.com/bigquery/public-data/hacker-news) and download 100,000 texts using the [bigrquery](https://cran.r-project.org/package=bigrquery) package.
+
+```{r hacker_news_raw}
+library(bigrquery)
+library(tidyverse)
+
+sql <- "#legacySQL
+SELECT
+  stories.title AS title,
+  stories.text AS text,
+FROM
+  [bigquery-public-data:hacker_news.full] AS stories
+WHERE
+  stories.deleted IS NULL
+LIMIT
+  100000"
+
+hacker_news_raw <- query_exec(sql, project = project, max_pages = Inf)
+```
+
+
+After we have the text downloaded, let's clean the text and make a data frame containing only the text, plus an ID to identify each "document", i.e., post.
+
+```{r hacker_news_text, dependson="hacker_news_raw"}
+hacker_news_text <- hacker_news_raw %>%
+  as_tibble() %>%
+  mutate(title = na_if(title, ""),
+         text = coalesce(title, text)) %>%
+  select(-title) %>%
+  mutate(text = str_replace_all(text, "&#x27;|&quot;|&#x2F;", "'"), ## weird encoding
+         text = str_replace_all(text, "<a(.*?)>", " "),             ## links 
+         text = str_replace_all(text, "&gt;|&lt;|&amp;", " "),      ## html yuck
+         text = str_replace_all(text, "&#[:digit:]+;", " "),        ## html yuck
+         text = str_remove_all(text, "<[^>]*>"),                    ## mmmmm, more html yuck
+         postID = row_number()) 
+```
+
+Now it's time to tokenize and tidy the text, remove some stop words (and numbers, although this is an analytical choice that you might want to try in a different way), and then cast to a sparse matrix. I'm using the `token = "tweets"` option for tokenizing because it often performs the most sensibly with text from online forums, such as Hacker News (and Stack Overflow, and Reddit, and so on). In my [previous blog post](https://juliasilge.com/blog/sherlock-holmes-stm/), I used a quanteda `dfm` as the input to the topic modeling algorithm, but here I'm using a plain old sparse matrix. Either one works.
+
+```{r hacker_news_sparse, dependson="hacker_news_text"}
+library(tidytext)
+
+tidy_hacker_news <- hacker_news_text %>%
+  unnest_tokens(word, text, token = "tweets") %>%
+  anti_join(get_stopwords()) %>%
+  filter(!str_detect(word, "[0-9]+")) %>%
+  add_count(word) %>%
+  filter(n > 100) %>%
+  select(-n)
+
+hacker_news_sparse <- tidy_hacker_news %>%
+  count(postID, word) %>%
+  cast_sparse(postID, word, n)
+```
+
+## Train and evaluate topic models
+
+Now it's time to train some topic models! `r emo::ji("strong")` You can check out that [previous blog post on stm](https://juliasilge.com/blog/sherlock-holmes-stm/) for some details on how to get started, but in this post, we're going to go to the next level. We're not going to train just one topic model, but a whole group of them, with different numbers of topics, and then evaluate these models. In topic modeling, like with k-means clustering, we don't know ahead of time how many topics we should use, and research in this area says there is no "right" answer for the number of topics that is appropriate for any given corpus. Here, let's try a number of different values for $K$ (the number of topics) from 20 to 100. 
+
+With 100,000 texts this modeling takes a while `r emo::ji("weary")` so I have used I have used the [furrr](https://github.com/DavisVaughan/furrr) package (and [future](https://github.com/HenrikBengtsson/future)) for parallel processing.
+
+```{r many_models, dependson="hacker_news_sparse"}
+library(stm)
+library(furrr)
+plan(multiprocess)
+
+many_models <- data_frame(K = c(20, 40, 50, 60, 70, 80, 100)) %>%
+  mutate(topic_model = future_map(K, ~stm(hacker_news_sparse, K = .,
+                                          verbose = FALSE)))
+```
+
+Now that we've fit all these topic models with different numbers of topics, we can explore how many topics are appropriate/good/"best". The code below to find `k_result` is similar to stm's own [`searchK()`](https://github.com/bstewart/stm/blob/master/R/searchK.R) function, but it allows you to evaluate models trained on a sparse matrix (or a quanteda `dfm`) instead of only stm's corpus data structure, as well as to dig into the model diagnostics yourself in detail. Some of these functions were not originally flexible enough to take a sparse matrix or `dfm` as input, so I'd like to send huge thanks to Brandon Stewart, stm's developer, for [adding this functionality](https://github.com/bstewart/stm/issues/134).
+
+```{r k_result, dependson="many_models"}
+heldout <- make.heldout(hacker_news_sparse)
+
+k_result <- many_models %>%
+  mutate(exclusivity = map(topic_model, exclusivity),
+         semantic_coherence = map(topic_model, semanticCoherence, hacker_news_sparse),
+         eval_heldout = map(topic_model, eval.heldout, heldout$missing),
+         residual = map(topic_model, checkResiduals, hacker_news_sparse),
+         bound =  map_dbl(topic_model, function(x) max(x$convergence$bound)),
+         lfact = map_dbl(topic_model, function(x) lfactorial(x$settings$dim$K)),
+         lbound = bound + lfact,
+         iterations = map_dbl(topic_model, function(x) length(x$convergence$bound)))
+
+k_result
+```
+
+We're evaluating things like the residuals, the [semantic coherence](https://dl.acm.org/citation.cfm?id=2145462) of the topics, the likelihood for held-out datasets, and more. We can make some diagnostic plots using these quantities to understand how the models are performing at various numbers of topics. The following code makes a diagnostic plot similar to one that comes built in to the stm package.
+
+```{r model_diagnostic, dependson="k_result", fig.width=9, fig.height=6}
+k_result %>%
+  transmute(K,
+            `Lower bound` = lbound,
+            Residuals = map_dbl(residual, "dispersion"),
+            `Semantic coherence` = map_dbl(semantic_coherence, mean),
+            `Held-out likelihood` = map_dbl(eval_heldout, "expected.heldout")) %>%
+  gather(Metric, Value, -K) %>%
+  ggplot(aes(K, Value, color = Metric)) +
+  geom_line(size = 1.5, alpha = 0.7, show.legend = FALSE) +
+  facet_wrap(~Metric, scales = "free_y") +
+  labs(x = "K (number of topics)",
+       y = NULL,
+       title = "Model diagnostics by number of topics",
+       subtitle = "These diagnostics indicate that a good number of topics would be around 60")
+```
+
+The held-out likelihood is highest between 60 and 80, and the residuals are lowest around 60, so perhaps a good number of topics would be around there.
+
+Semantic coherence is maximized when the most probable words in a given topic frequently co-occur together, and it's a metric that correlates well with human judgment of topic quality. Having high semantic coherence is relatively easy, though, if you only have a few topics dominated by very common words, so you want to look at both semantic coherence and exclusivity of words to topics. It's a tradeoff. Read more about semantic coherence in the [original paper about it](https://dl.acm.org/citation.cfm?id=2145462).
+
+```{r coherence_exclusive, dependson="k_result", fig.width=10, fig.height=6}
+k_result %>%
+  select(K, exclusivity, semantic_coherence) %>%
+  filter(K %in% c(20, 60, 100)) %>%
+  unnest() %>%
+  mutate(K = as.factor(K)) %>%
+  ggplot(aes(semantic_coherence, exclusivity, color = K)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(x = "Semantic coherence",
+       y = "Exclusivity",
+       title = "Comparing exclusivity and semantic coherence",
+       subtitle = "Models with fewer topics have higher semantic coherence for more topics, but lower exclusivity")
+```
+
+So for this analysis, it looks a good choice could be the model with **60** topics.
+
+```{r topic_model, dependson="many_models"}
+topic_model <- k_result %>% 
+  filter(K == 60) %>% 
+  pull(topic_model) %>% 
+  .[[1]]
+
+topic_model
+```
+
+
+## Explore the topic model
+
+We've trained topic models, evaluated them, and picked one to use, so now let's see what this topic model tells us about the Hacker News corpus. In real life analysis, this process would be iterative, moving from exploring and interpreting a model back and forth to diagnostics and evaluation in order to decide how best to model a corpus. One of the reasons I embrace tidy data principles and tidy tools is that this iterative process is streamlined. For example, let's `tidy()` the beta matrix for our topic model and look at the probabilities that each word is generated from each topic.
+
+```{r td_beta, dependson="topic_model"}
+td_beta <- tidy(topic_model)
+
+td_beta
+```
+
+I'm also quite interested in the probabilities that each document is generated from each topic, that gamma matrix.
+
+```{r td_gamma, dependson="topic_model"}
+td_gamma <- tidy(topic_model, matrix = "gamma",
+                 document_names = rownames(hacker_news_sparse))
+
+td_gamma
+```
+
+Let's combine these to understand the topic prevalence in the Hacker News corpus, and which words contribute to each topic.
+
+```{r gamma_terms, dependson=c("td_beta", "td_gamma"), fig.width=12, fig.height=7}
+library(ggthemes)
+
+top_terms <- td_beta %>%
+  arrange(beta) %>%
+  group_by(topic) %>%
+  top_n(7, beta) %>%
+  arrange(-beta) %>%
+  select(topic, term) %>%
+  summarise(terms = list(term)) %>%
+  mutate(terms = map(terms, paste, collapse = ", ")) %>% 
+  unnest()
+
+gamma_terms <- td_gamma %>%
+  group_by(topic) %>%
+  summarise(gamma = mean(gamma)) %>%
+  arrange(desc(gamma)) %>%
+  left_join(top_terms, by = "topic") %>%
+  mutate(topic = paste0("Topic ", topic),
+         topic = reorder(topic, gamma))
+
+gamma_terms %>%
+  top_n(20, gamma) %>%
+  ggplot(aes(topic, gamma, label = terms, fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(hjust = 0, nudge_y = 0.0005, size = 3,
+            family = "IBMPlexSans") +
+  coord_flip() +
+  scale_y_continuous(expand = c(0,0),
+                     limits = c(0, 0.09),
+                     labels = percent_format()) +
+  theme_tufte(base_family = "IBMPlexSans", ticks = FALSE) +
+  theme(plot.title = element_text(size = 16,
+                                  family="IBMPlexSans-Bold"),
+        plot.subtitle = element_text(size = 13)) +
+  labs(x = NULL, y = expression(gamma),
+       title = "Top 20 topics by prevalence in the Hacker News corpus",
+       subtitle = "With the top words that contribute to each topic")
+```
+
+We can look at all the topics, ordered by prevalence.
+
+```{r dependson="gamma_terms"}
+gamma_terms %>%
+  select(topic, gamma, terms) %>%
+  kable(digits = 3, 
+        col.names = c("Topic", "Expected topic proportion", "Top 7 terms"))
+```
+
+We can see here that the first several topics are focused around general purpose English words in different categories of meaning. About 10 topics down, we see a topic about markets, money, and value. A bit below that, we see the first topic with explicitly technical-ish terms like software, build, and project. There is a topic that combined "make", "makes", "made", and "making". Notice that I did not stem these words before modeling. [Research](https://transacl.org/ojs/index.php/tacl/article/view/868) shows that [stemming words when topic modeling doesn't help and often hurts](http://www.cs.cornell.edu/~xanda/winlp2017.pdf), so don't automatically assume that you should be stemming your words.
+
+So there you have it! We trained topic models at multiple values of $K$, evaluated them, and then explored our model. Let me know if you have any questions or feedback!
+

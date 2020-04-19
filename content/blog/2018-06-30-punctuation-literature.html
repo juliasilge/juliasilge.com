@@ -1,0 +1,87 @@
+---
+title: "Punctuation in literature"
+date: 2018-06-30
+slug: "punctution-literature"
+tags: [rstats]
+---
+
+
+
+<p>This morning I was scrolling through Twitter and noticed Alberto Cairo share <a href="https://medium.com/@neuroecology/punctuation-in-novels-8f316d542ec4">this lovely data visualization piece by Adam J. Calhoun</a> about the varying prevalence of punctuation in literature. I thought, “I want to do that!” It also offers me the opportunity to chat about a few of the new options available for tokenizing in tidytext via updates to the <a href="https://github.com/ropensci/tokenizers">tokenizers</a> package.</p>
+<p>Adam’s original piece explores how punctuation is used in nine novels, including my favorite <em>Pride and Prejudice</em>. To mix things up a bit, let’s include some of the same pieces of literature Adam used and some different ones. We can access the full text of public domain works from Project Gutenberg via the <a href="https://github.com/ropenscilabs/gutenbergr">gutenbergr</a> package.</p>
+<pre class="r"><code>library(tidyverse)
+library(gutenbergr)
+
+titles &lt;- c(&quot;Pride and Prejudice&quot;,
+            &quot;Ulysses&quot;,
+            &quot;Anne of Green Gables&quot;,
+            &quot;Wuthering Heights&quot;,
+            &quot;The War of the Worlds&quot;,
+            &quot;Alice&#39;s Adventures in Wonderland&quot;,
+            &quot;Adventures of Huckleberry Finn&quot;,
+            &quot;Frankenstein; Or, The Modern Prometheus&quot;,
+            &quot;The Strange Case of Dr. Jekyll and Mr. Hyde&quot;)
+
+books &lt;- gutenberg_works(title %in% titles) %&gt;%
+    gutenberg_download(meta_fields = &quot;title&quot;) %&gt;%
+    mutate(text = iconv(text, from = &quot;latin1&quot;, to = &quot;UTF-8&quot;))
+
+books</code></pre>
+<pre><code>## # A tibble: 100,286 x 3
+##    gutenberg_id text                               title                  
+##           &lt;int&gt; &lt;chr&gt;                              &lt;chr&gt;                  
+##  1           11 ALICE&#39;S ADVENTURES IN WONDERLAND   Alice&#39;s Adventures in …
+##  2           11 &quot;&quot;                                 Alice&#39;s Adventures in …
+##  3           11 Lewis Carroll                      Alice&#39;s Adventures in …
+##  4           11 &quot;&quot;                                 Alice&#39;s Adventures in …
+##  5           11 THE MILLENNIUM FULCRUM EDITION 3.0 Alice&#39;s Adventures in …
+##  6           11 &quot;&quot;                                 Alice&#39;s Adventures in …
+##  7           11 &quot;&quot;                                 Alice&#39;s Adventures in …
+##  8           11 &quot;&quot;                                 Alice&#39;s Adventures in …
+##  9           11 &quot;&quot;                                 Alice&#39;s Adventures in …
+## 10           11 CHAPTER I. Down the Rabbit-Hole    Alice&#39;s Adventures in …
+## # ... with 100,276 more rows</code></pre>
+<p>We now have the full texts of these works. Next, let’s find the punctuation that is used in each. In some recent releases of <a href="https://github.com/juliasilge/tidytext">tidytext</a> (in addition to <a href="https://twitter.com/juliasilge/status/1001661517299773440">A STICKER</a>) we have support for more kinds of tokenizing, including <a href="https://twitter.com/juliasilge/status/1001553030011961345">tokenization for tweets</a> and options for handling punctuation. Let’s <em>keep</em> punctuation, instead of throwing it out, and then filter to only keep the punctuation tokens we want.</p>
+<pre class="r"><code>library(tidytext)
+
+punctuation &lt;- books %&gt;%
+    unnest_tokens(token, text, strip_punct = FALSE) %&gt;%
+    count(title, token, sort = TRUE) %&gt;%
+    filter(token %in% c(&quot;,&quot;, &quot;?&quot;, &quot;.&quot;, &#39;&quot;&#39;, &quot;&#39;&quot;, &quot;!&quot;, &quot;;&quot;, &quot;:&quot;))
+
+punctuation</code></pre>
+<pre><code>## # A tibble: 70 x 3
+##    title                          token     n
+##    &lt;chr&gt;                          &lt;chr&gt; &lt;int&gt;
+##  1 Ulysses                        .     22178
+##  2 Ulysses                        ,     16361
+##  3 Wuthering Heights              ,      9892
+##  4 Pride and Prejudice            ,      9132
+##  5 Adventures of Huckleberry Finn ,      8050
+##  6 Anne of Green Gables           .      6567
+##  7 Pride and Prejudice            .      6180
+##  8 Anne of Green Gables           ,      5505
+##  9 Wuthering Heights              .      5141
+## 10 Adventures of Huckleberry Finn .      5098
+## # ... with 60 more rows</code></pre>
+<p>Now we can make a bar chart like the one in the original piece to compare how punctuation is used in these nine pieces of literature.</p>
+<pre class="r"><code>punctuation %&gt;%
+    mutate(token = reorder(token, n),
+           title = case_when(str_detect(title, &quot;Frankenstein&quot;) ~ &quot;Frankenstein&quot;,
+                             str_detect(title, &quot;Dr. Jekyll&quot;) ~ &quot;Dr. Jekyll and Mr. Hyde&quot;,
+                             TRUE ~ title)) %&gt;%
+    ggplot(aes(token, n, fill = title)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    facet_wrap(~title, scales = &quot;free_x&quot;) +
+    scale_y_continuous(expand = c(0,0)) +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.y = element_text(family = &quot;IBMPlexSans-Bold&quot;, 
+                                     size = 14)) +
+    labs(x = NULL, y = NULL,
+         title = &quot;Punctuation in literature&quot;,
+         subtitle = &quot;Commas are typically most common&quot;)</code></pre>
+<p><img src="/blog/2018/2018-06-30-punctuation-literature_files/figure-html/unnamed-chunk-3-1.png" width="1530" /></p>
+<p>Commas are the PUNCTUATION WINNER, except in <em>Anne of Green Gables</em> and <em>Ulysses</em>, where periods win out. These two novels are dramatically different from each other in other ways, though, and Ulysses is an outlier overall with almost no spoken dialogue via quotation marks and an unusual use of colons to semicolons. Exclamation marks are used relatively more in <em>Wuthering Heights</em> and <em>Alice in Wonderland</em>!</p>
+<p>Exploring text in these kinds of ways is so fun, and tools for this type of text mining are developing so fast. You can incorporate information like this into modeling or statistical analysis; Mike Kearney has a package called <a href="https://github.com/mkearney/textfeatures">textfeatures</a> that lets you directly extract info such as the number of commas or number of exclamation marks from text. Let me know if you have any questions!</p>

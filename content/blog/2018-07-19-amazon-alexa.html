@@ -1,0 +1,170 @@
+---
+title: "Amazon Alexa and Accented English"
+date: 2018-07-19
+slug: "amazon-alexa"
+tags: [rstats]
+---
+
+
+
+<p>Earlier this spring, one of my data science friends here in SLC got in contact with me about some fun analysis. My friend <a href="https://www.linkedin.com/in/dylanzwick/">Dylan Zwick</a> is a founder at <a href="https://www.pulselabs.ai/#/">Pulse Labs</a>, a voice-testing startup, and they were chatting with the Washington Post about a piece on how devices like Amazon Alexa deal with accented English. The piece is <a href="https://www.washingtonpost.com/graphics/2018/business/alexa-does-not-understand-your-accent/">published today in the Washington Post</a> and turned out really interesting! Let’s walk through the analysis I did for Dylan and Pulse Labs.</p>
+<div id="understanding-the-data" class="section level2">
+<h2>Understanding the data</h2>
+<p>Dylan shared voice testing results data with me via Google Sheets. The dataset included the phrase that each speaker spoke aloud, the transcription of the phrase that the Alexa device understood, and a categorization for each speaker’s accent.</p>
+<pre class="r"><code>library(tidyverse)
+library(googlesheets)
+library(stringdist)
+
+alexa_raw &lt;- gs_title(&quot;Alexa Speech to Text by Accent Data&quot;) %&gt;%
+    gs_read(range = cell_cols(1:4),
+            verbose = FALSE) %&gt;%
+    set_names(&quot;truth&quot;, &quot;measured&quot;, &quot;accent&quot;, &quot;example&quot;)</code></pre>
+<p>What do a few examples look like?</p>
+<pre class="r"><code>alexa_raw %&gt;% 
+    sample_n(3) %&gt;% 
+    select(truth, measured, accent) %&gt;% 
+    kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">truth</th>
+<th align="left">measured</th>
+<th align="left">accent</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">China proposes removal of two term limit potentially paving way for Xi to remain President</td>
+<td align="left">china proposes removal of to term limit potentially paving way for gh remain president</td>
+<td align="left">1</td>
+</tr>
+<tr class="even">
+<td align="left">As winter games close team USA falls short of expectations</td>
+<td align="left">ask winter games close team usa fall short of expectations</td>
+<td align="left">1</td>
+</tr>
+<tr class="odd">
+<td align="left">China proposes removal of two term limit potentially paving way for Xi to remain President</td>
+<td align="left">china china proposes removal of to time limit potentially paving way to remain president</td>
+<td align="left">1</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>truth</code> column here contains the phrase that the speaker was instructed to read (there are three separate test phrases), while the <code>measured</code> column contains the text as it was transcribed by Alexa. The <code>accent</code> column is a numeric coding (1, 2, or 3) for the three categories of accented English in this text. The three categories are US flat (which would be typical broadcast English in the US, often encounted in the West and Midwest), a native speaker accent (these folks included Southern US accents and accents from Britain and Australia), and a non-native speaker accent (individuals for whom English is not their first language).</p>
+<pre class="r"><code>alexa &lt;- alexa_raw %&gt;%
+    mutate(accent = case_when(accent == 1 ~ &quot;US flat&quot;,
+                              accent == 2 ~ &quot;Native speaker accent&quot;,
+                              accent == 3 ~ &quot;Non-native speaker accent&quot;),
+           accent = factor(accent, levels = c(&quot;US flat&quot;,
+                                              &quot;Native speaker accent&quot;,
+                                              &quot;Non-native speaker accent&quot;)),
+           example = case_when(example == &quot;X&quot; ~ TRUE,
+                               TRUE ~ FALSE),
+           truth = str_to_lower(truth),
+           measured = str_to_lower(measured)) %&gt;%
+    filter(truth != &quot;phrase&quot;,
+           truth != &quot;&quot;) %&gt;%
+    mutate(distance = stringdist(truth, measured, &quot;lv&quot;))</code></pre>
+<p>How many recordings from an Alexa device do we have data for, for each accent?</p>
+<pre class="r"><code>alexa %&gt;%
+    count(accent) %&gt;%
+    kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">accent</th>
+<th align="right">n</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">US flat</td>
+<td align="right">46</td>
+</tr>
+<tr class="even">
+<td align="left">Native speaker accent</td>
+<td align="right">33</td>
+</tr>
+<tr class="odd">
+<td align="left">Non-native speaker accent</td>
+<td align="right">20</td>
+</tr>
+</tbody>
+</table>
+<p>This is a pretty small sample; we would be able to make stronger conclusions with more recordings.</p>
+</div>
+<div id="visualizations" class="section level2">
+<h2>Visualizations</h2>
+<p>Let’s look at the <a href="https://en.wikipedia.org/wiki/Levenshtein_distance">string distance</a> between each between each benchmark phrase (the phrase that the speaker intended to speak) and the speech-to-text output from Alexa. We can think about this metric as the difference between what the speaker said and what Alexa heard.</p>
+<pre class="r"><code>alexa %&gt;%
+    ggplot(aes(accent, distance, fill = accent, color = accent)) +
+    geom_boxplot(alpha = 0.2, size = 1.5) +
+    labs(x = NULL, y = &quot;String distance (Levenshtein distance)&quot;,
+         title = &quot;How well does Alexa understand different accents?&quot;,
+         subtitle = &quot;Speech with non-native accents is converted to text with the lowest accuracy&quot;) +
+    theme(legend.position=&quot;none&quot;)</code></pre>
+<p><img src="/blog/2018/2018-07-19-amazon-alexa_files/figure-html/boxplot-1.png" width="1440" /></p>
+<p>I used the Levenshtein distance, but the results are robust to other string distance measures.</p>
+<pre class="r"><code>alexa %&gt;%
+    group_by(accent) %&gt;%
+    summarise(distance = median(distance)) %&gt;%
+    ggplot(aes(accent, distance, fill = accent)) +
+    geom_col(alpha = 0.8) +
+    geom_text(aes(x = accent, y = 0.5, label = accent), color=&quot;white&quot;,
+            family=&quot;IBMPlexSans-Medium&quot;, size=7, hjust = 0) +
+    labs(x = NULL, y = &quot;String distance between phrase and speech-to-text output (median Levenshtein distance)&quot;,
+         title = &quot;How well does Alexa understand English speakers with different accents?&quot;,
+         subtitle = &quot;Speech with non-native accents is converted to text with the lowest accuracy&quot;) +
+    scale_y_continuous(expand = c(0,0)) +
+    theme(axis.text.y=element_blank(),
+          legend.position=&quot;none&quot;) +
+    coord_flip()</code></pre>
+<p><img src="/blog/2018/2018-07-19-amazon-alexa_files/figure-html/barplot-1.png" width="1440" /></p>
+<p>We can see here that the median difference is higher, by over 30%, for speakers with non-native-speaking accents. There is no difference for speakers with accents like British or Southern accents. That result looks pretty convincing, and certainly lines up with what <a href="https://www.washingtonpost.com/graphics/2018/business/alexa-does-not-understand-your-accent/">other groups in the WashPo piece</a> found, but it’s based on quite a small sample. Let’s try a statistical test.</p>
+</div>
+<div id="statistical-tests" class="section level2">
+<h2>Statistical tests</h2>
+<p>Let’s compare first the native speaker accent to the US flat group, then the non-native speakers to the US flat group.</p>
+<pre class="r"><code>t.test(distance ~ accent, data = alexa %&gt;% filter(accent != &quot;Non-native speaker accent&quot;))</code></pre>
+<pre><code>## 
+##  Welch Two Sample t-test
+## 
+## data:  distance by accent
+## t = -0.55056, df = 60.786, p-value = 0.584
+## alternative hypothesis: true difference in means is not equal to 0
+## 95 percent confidence interval:
+##  -3.875468  2.202214
+## sample estimates:
+##               mean in group US flat mean in group Native speaker accent 
+##                            8.739130                            9.575758</code></pre>
+<pre class="r"><code>t.test(distance ~ accent, data = alexa %&gt;% filter(accent != &quot;Native speaker accent&quot;))</code></pre>
+<pre><code>## 
+##  Welch Two Sample t-test
+## 
+## data:  distance by accent
+## t = -1.3801, df = 25.213, p-value = 0.1797
+## alternative hypothesis: true difference in means is not equal to 0
+## 95 percent confidence interval:
+##  -8.125065  1.603326
+## sample estimates:
+##                   mean in group US flat 
+##                                 8.73913 
+## mean in group Non-native speaker accent 
+##                                12.00000</code></pre>
+<p>Performing some t-tests indicates that the group of speakers with flat accents and those with native speaker accents (Southern, British, etc.) are not different from each other; notice how big the p-value is (almost 0.6).</p>
+<p>The situation is not clear for the comparison of the speakers with flat accents and those with non-native speaker accents, either. The p-value is about 0.18, higher than normal statistical cutoffs. It would be better to have more data to draw clear conclusions. Let’s do a simple power calculation to estimate how many measurements we would need to measure a difference this big (~30%, or ~3 on the string distance scale).</p>
+<pre class="r"><code>power.t.test(delta = 3, sd = sd(alexa$distance), 
+             sig.level = 0.05, power = 0.8)</code></pre>
+<pre><code>## 
+##      Two-sample t test power calculation 
+## 
+##               n = 93.37079
+##           delta = 3
+##              sd = 7.278467
+##       sig.level = 0.05
+##           power = 0.8
+##     alternative = two.sided
+## 
+## NOTE: n is number in *each* group</code></pre>
+<p>This indicates we would need on the order of 90 examples per group (instead of the 20 to 40 that we have) to measure the ~30% difference we see with statistical significance. That may be a lot of voice testing to do for a single newspaper article but would be necessary to make strong statements. This dataset shows how complicated the landscape for these devices is. Check out the piece online (which includes quotes from Kaggle’s <a href="http://www.rctatman.com/">Rachael Tatman</a>) and let me know if you have any feedback or questions!</p>
+</div>

@@ -1,0 +1,81 @@
+---
+title: "Punctuation in literature"
+date: 2018-06-30
+slug: "punctution-literature"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+library(ggplot2)
+library(silgelib)
+library(tidyverse)
+theme_set(theme_plex())
+```
+
+This morning I was scrolling through Twitter and noticed Alberto Cairo share [this lovely data visualization piece by Adam J. Calhoun](https://medium.com/@neuroecology/punctuation-in-novels-8f316d542ec4) about the varying prevalence of punctuation in literature. I thought, "I want to do that!" It also offers me the opportunity to chat about a few of the new options available for tokenizing in tidytext via updates to the [tokenizers](https://github.com/ropensci/tokenizers) package.
+
+Adam's original piece explores how punctuation is used in nine novels, including my favorite *Pride and Prejudice*. To mix things up a bit, let's include some of the same pieces of literature Adam used and some different ones. We can access the full text of public domain works from Project Gutenberg via the [gutenbergr](https://github.com/ropenscilabs/gutenbergr) package.
+
+```{r}
+library(tidyverse)
+library(gutenbergr)
+
+titles <- c("Pride and Prejudice",
+            "Ulysses",
+            "Anne of Green Gables",
+            "Wuthering Heights",
+            "The War of the Worlds",
+            "Alice's Adventures in Wonderland",
+            "Adventures of Huckleberry Finn",
+            "Frankenstein; Or, The Modern Prometheus",
+            "The Strange Case of Dr. Jekyll and Mr. Hyde")
+
+books <- gutenberg_works(title %in% titles) %>%
+    gutenberg_download(meta_fields = "title") %>%
+    mutate(text = iconv(text, from = "latin1", to = "UTF-8"))
+
+books
+```
+
+We now have the full texts of these works. Next, let's find the punctuation that is used in each. In some recent releases of [tidytext](https://github.com/juliasilge/tidytext) (in addition to [A STICKER](https://twitter.com/juliasilge/status/1001661517299773440)) we have support for more kinds of tokenizing, including [tokenization for tweets](https://twitter.com/juliasilge/status/1001553030011961345) and options for handling punctuation. Let's *keep* punctuation, instead of throwing it out, and then filter to only keep the punctuation tokens we want.
+
+```{r}
+library(tidytext)
+
+punctuation <- books %>%
+    unnest_tokens(token, text, strip_punct = FALSE) %>%
+    count(title, token, sort = TRUE) %>%
+    filter(token %in% c(",", "?", ".", '"', "'", "!", ";", ":"))
+
+punctuation
+```
+
+
+Now we can make a bar chart like the one in the original piece to compare how punctuation is used in these nine pieces of literature.
+
+```{r, fig.width=8.5, fig.height=8.5}
+punctuation %>%
+    mutate(token = reorder(token, n),
+           title = case_when(str_detect(title, "Frankenstein") ~ "Frankenstein",
+                             str_detect(title, "Dr. Jekyll") ~ "Dr. Jekyll and Mr. Hyde",
+                             TRUE ~ title)) %>%
+    ggplot(aes(token, n, fill = title)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    facet_wrap(~title, scales = "free_x") +
+    scale_y_continuous(expand = c(0,0)) +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.y = element_text(family = "IBMPlexSans-Bold", 
+                                     size = 14)) +
+    labs(x = NULL, y = NULL,
+         title = "Punctuation in literature",
+         subtitle = "Commas are typically most common")
+```
+
+Commas are the PUNCTUATION WINNER, except in *Anne of Green Gables* and *Ulysses*, where periods win out. These two novels are dramatically different from each other in other ways, though, and Ulysses is an outlier overall with almost no spoken dialogue via quotation marks and an unusual use of colons to semicolons. Exclamation marks are used relatively more in *Wuthering Heights* and *Alice in Wonderland*!
+
+Exploring text in these kinds of ways is so fun, and tools for this type of text mining are developing so fast. You can incorporate information like this into modeling or statistical analysis; Mike Kearney has a package called [textfeatures](https://github.com/mkearney/textfeatures) that lets you directly extract info such as the number of commas or number of exclamation marks from text. Let me know if you have any questions!

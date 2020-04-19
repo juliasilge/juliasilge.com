@@ -1,0 +1,131 @@
+---
+title: "tidytext 0.1.6"
+date: 2018-01-10
+slug: "tidytext-0-1-6"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+options(width=80, dplyr.width = 150)
+library(ggplot2)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+I am pleased to announce that [tidytext 0.1.6](https://cran.r-project.org/package=tidytext) is now on CRAN!
+
+Most of this release, as well as the 0.1.5 release which I did not blog about, was for maintenance, updates to align with API changes from tidytext's dependencies, and bugs. I just spent a good chunk of effort getting tidytext to pass R CMD check [on older versions of R](https://github.com/juliasilge/tidytext/blob/ef722210b9ad80e306badd0c5a866a320a37d9b4/.travis.yml#L11) despite the fact that some of the packages in tidytext's [Suggests](https://github.com/juliasilge/tidytext/blob/ef722210b9ad80e306badd0c5a866a320a37d9b4/DESCRIPTION#L28) require recent versions of R. FUN TIMES. I was glad to get it working, though, because I know that we have users, some teaching on university campuses, etc, who are constrained to older versions of R in various environments.
+
+There are some more interesting updates. For example, did you know about the new-ish [stopwords](https://cran.r-project.org/package=stopwords) package? This package provides access to stopword lists from multiple sources in multiple languages. If you would like to access these  in a list data structure, go to the original package. But if you like your text tidy, I GOT YOU.
+
+```{r}
+library(tidytext)
+
+get_stopwords()
+get_stopwords(source = "smart")
+get_stopwords(language = "ru")
+get_stopwords(language = "it")
+```
+
+This allows users to implement text mining tasks using tidy data principles that have been difficult before now. What if we would like to find the most common words in, say, [Rainer Maria Rilke's work](http://www.gutenberg.org/ebooks/author/846), but **in the original German**?
+
+```{r}
+library(gutenbergr)
+library(tidyverse)
+
+raw_rilke <- gutenberg_download(c(24288, 33863, 2188, 34521),
+                                meta_fields = "title") %>%
+    mutate(text = iconv(text, from = "latin-9", to = "UTF-8"))
+
+tidy_rilke <- raw_rilke %>%
+    unnest_tokens(word, text) %>%
+    count(title, word, sort = TRUE) %>%
+    anti_join(get_stopwords(language = "de"))
+
+tidy_rilke
+```
+
+
+```{r, fig.width=8.5, fig.height=8.5}
+tidy_rilke %>%
+    group_by(title) %>%
+    top_n(12) %>%
+    ungroup %>%
+    mutate(word = reorder(word, n),
+           title = factor(title,
+                          levels = c("Das Stunden-Buch",
+                                     "Das Buch der Bilder",
+                                     "Neue Gedichte",
+                                     "Die Aufzeichnungen des Malte Laurids Brigge"))) %>%
+    group_by(title, word) %>%    
+    arrange(desc(n)) %>%  
+    ungroup() %>%
+    mutate(word = factor(paste(word, title, sep = "__"), 
+                         levels = rev(paste(word, title, sep = "__")))) %>%
+    ggplot(aes(word, n, fill = title)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    facet_wrap(~title, scales = "free") +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
+    labs(x = NULL, y = "Number of uses in each book",
+         title = "Word use in the poetry of Rainer Maria Rilke",
+         subtitle = "The most common words after stopword removal")
+```
+
+
+The first three works here are poetry (*The Book of Hours*, *The Book of Images*, and *New Poems*) while the last is a book of prose (*The Notebooks of Malte Laurids Brigge*). We can see the different themes and word use here, even just by counting up word frequencies. Now, if I actually spoke German fluently, I know this would mean more to me, but even to my English-speaking eyes, we can see meaningful trends. These are all still quite common words (the Snowball stopword lists are not terribly large) but some of these works are more religious (God, life) and some more focused on narrating events, and so forth.
+
+Another addition in this release is a dataset of negators, modals, and adverbs (only in English). These are words that can affect sentiment analysis, either by intensifying words or negating them.
+
+```{r}
+nma_words %>%
+    count(modifier)
+```
+
+You can read more [from Saif Mohammad](http://saifmohammad.com/WebPages/SCL.html#NMA) about how these kinds of words can affect sentiment analysis. One of the reasons that tidy data principles are so well suited to text mining is that you can interrogate sentiment scores and get at questions like these quite naturally. I talk about this in [my DataCamp course](https://www.datacamp.com/courses/sentiment-analysis-in-r-the-tidy-way), and also you can read about this in our book, in the [chapter on n-grams](https://www.tidytextmining.com/ngrams.html) and the [case study on Usenet messages](https://www.tidytextmining.com/usenet.html).
+
+For example, we can ask which words in Jane Austen's novels are more likely to appear after these adverbs?
+
+```{r, fig.width=12, fig.height=8}
+library(janeaustenr)
+
+adverbs <- nma_words %>%
+    filter(modifier == "adverb") %>%
+    pull(word)
+
+austen_bigrams <- austen_books() %>%
+    unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+    count(bigram, sort = TRUE) %>%
+    separate(bigram, c("word1", "word2"), sep = " ")
+
+austen_bigrams %>%
+    filter(word1 %in% adverbs) %>%
+    count(word1, word2, wt = n, sort = TRUE) %>%
+    inner_join(get_sentiments("afinn"), by = c(word2 = "word")) %>%
+    mutate(contribution = score * nn) %>%
+    group_by(word1) %>%
+    filter(n() > 10) %>%
+    top_n(10, abs(contribution)) %>%
+    ungroup() %>%
+    mutate(word2 = reorder(paste(word2, word1, sep = "__"), contribution)) %>%
+    ggplot(aes(word2, contribution, fill = contribution > 0)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    facet_wrap(~ word1, scales = "free", nrow = 3) +
+    scale_x_discrete(labels = function(x) gsub("__.+$", "", x)) +
+    coord_flip() +
+    labs(x = NULL, y = "Sentiment score * # of occurrences",
+         title = "Words preceded by adverbs in Jane Austen's novels",
+         subtitle = "Things are rather distressing but most agreeable")
+```
+
+Gosh, I love this A LOT because you can see really common Jane Austen word patterns here. Some people are extremely agreeable, but sometimes you can't help but be highly incensed. I am *particularly* fond of this kind of text mining.
+
+To see any more details of how to use tidytext functions, you can check out the documentation, vignettes, and news for tidytext at our [package website](http://juliasilge.github.io/tidytext/). Let me know if you have questions!
+
+
+

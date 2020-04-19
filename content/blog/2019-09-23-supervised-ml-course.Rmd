@@ -1,0 +1,48 @@
+---
+title: "(Re)Launching my supervised machine learning course"
+date: 2019-09-23
+slug: "supervised-ml-course"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+library(ggplot2)
+library(silgelib)
+library(tidyverse)
+theme_set(theme_plex())
+```
+
+Today I am happy to announce a new(-ish), free, online, interactive course that I have developed, [**Supervised Machine Learning: Case Studies in R**](https://supervised-ml-course.netlify.com/)! `r emo::ji("dizzy")`
+
+![](/figs/2019-09-23-supervised-ml-course/ml-course.png)
+
+## Supervised machine learning in R
+
+Predictive modeling, or supervised machine learning, is a powerful tool for using data to make predictions about the world around us. Once you understand the basic ideas of supervised machine learning, the next step is to practice your skills so you know how to apply these techniques wisely and appropriately. In this course that I have developed, you can work through four case studies using data from the real world; the course focuses on exploratory data analysis, preparing data so it is ready for predictive modeling, training supervised machine learning models, and evaluating those models.
+
+This course approaches supervised machine learning using:
+
+- [tidyverse](https://tidyverse.tidyverse.org/) tools
+- more mature parts of the [tidymodels](https://github.com/tidymodels) suite of packages
+- [caret](https://topepo.github.io/caret/)
+
+The interactive course site is built on the amazing framework created by [Ines Montani](https://ines.io/), originally built for her [spaCy course](https://course.spacy.io).  The front-end is powered by
+[Gatsby](http://gatsbyjs.org/) and [Reveal.js](https://revealjs.com) and the
+back-end code execution uses [Binder](https://mybinder.org). It can take a little while for Binder to spin up a new Docker container the first time you run a code exercise in a new session, so be patient when that happens! `r emo::ji("time")`
+
+[Florencia D'Andrea](https://florencia.netlify.com/) helped port the course materials and made the fun logo; I am quite happy that I hired Florencia to work with me on this. You can find the [code that builds my course on GitHub](https://github.com/juliasilge/supervised-ML-case-studies-course). To learn more about building a course on this framework, see Ines's starter repos for making courses in [Python](https://github.com/ines/course-starter-python) and [R](https://github.com/ines/course-starter-r), and her explanation of how the framework works at [the original course repo](https://github.com/ines/spacy-course#-faq).
+
+## A little context
+
+If you have been [following news](https://www.buzzfeednews.com/article/daveyalba/datacamp-sexual-harassment-metoo-tech-startup) in the [data science world](https://www.noamross.net/2019/04/12/datacamp-sexual-assault/) over [the past months](https://juliasilge.com/blog/datacamp-misconduct/), you have probably guessed that this is a revamp of one of my DataCamp courses. The contract I have with DataCamp does not allow me to have my courses removed from that platform (although they have removed my name from my courses, not at my request), but I am allowed to republish the content elsewhere.
+
+One difference from this course's previous incarnation is that there is no video component (I do not own any rights to the videos). I will be interested to see how people respond to this change. I know the videos can be fun and people respond to them. At the same time, there is a [growing](https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1365-2729.2007.00248.x) body of [research](https://dl.acm.org/citation.cfm?id=2724681) and thought around the [limitations](https://dl.acm.org/citation.cfm?doid=2556325.2566239) of video in online learning environments. We'll see what learners gain from this version of the course.
+
+One benefit of having more influence on the content of the course now is that I can update it much more easily. My plan is to move the content from caret completely over to tidymodels as the tidymodels infrastructure continues to mature. Probably about when I move my IRL workflow over!
+
+## Try it out
+
+If you want to practice your ML skills, [give the course a go](https://supervised-ml-course.netlify.com/). `r emo::ji("rocket")` Contributions and comments on how to improve this course are welcome! Please [file an issue](https://github.com/juliasilge/supervised-ML-case-studies-course/issues) or submit a pull request if you find something that could be fixed or improved.

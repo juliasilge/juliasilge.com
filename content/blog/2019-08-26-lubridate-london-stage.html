@@ -1,0 +1,225 @@
+---
+title: "Practice using lubridate... THEATRICALLY"
+date: 2019-08-26
+slug: "lubridate-london-stage"
+tags: [rstats]
+---
+
+
+
+<p>I am so pleased to now be an <a href="http://rstd.io/trainers">RStudio-certified tidyverse trainer</a>! 🎉 I have been teaching technical content for decades, whether in a university classroom, developing online courses, or leading workshops, but I still found this program valuable for my own professonal development. I learned a lot that is going to make my teaching better, and I am happy to have been a participant. If you are looking for someone to lead trainings or workshops in your organization, you can check out <a href="http://rstd.io/trainers">this list of trainers</a> to see who might be conveniently located to you!</p>
+<p>Part of the certification process is delivering a demonstration lesson. I quite like the content of the demonstration lesson I built and I might not use it in an actual workshop anytime soon, so I decided to expand upon it and share it here as a blog post. My demonstration focused on handling dates using lubridate; dates and times are important in data analysis, but they can often be challenging. In this post, we will explore some <strong>wild caught</strong> date data from the London Stage Database 🎭 and explore how to handle these dates using the <a href="https://lubridate.tidyverse.org/">lubridate</a> package.</p>
+<div id="read-in-the-london-stage-database" class="section level2">
+<h2>Read in the London Stage Database</h2>
+<p>Learn more about the <a href="https://londonstagedatabase.usu.edu/">London Stage Database</a>, including about the <a href="https://londonstagedatabase.usu.edu/about.php">data provenance</a> and <a href="https://github.com/LondonStageDB/data">code used to build the database</a>. Briefly, it explores the theater scene in London from when playhouses were reopened in 1660 after the English civil wars to the end of the 18th century.</p>
+<div style="width:100%;height:0;padding-bottom:56%;position:relative;">
+<iframe src="https://giphy.com/embed/3o7TKzBxHeX1DHVhJe" width="100%" height="100%" style="position:absolute" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+</div>
+<p>
+<a href="https://giphy.com/gifs/phantomoftheopera-london-musical-3o7TKzBxHeX1DHVhJe">via GIPHY</a>
+</p>
+<p><em>(H/T for this dataset to <a href="https://tinyletter.com/data-is-plural">Data is Plural by Jeremy Singer-Vine</a>, one of the most fun newsletters I subscribe to.)</em></p>
+<p>To start, we are going to download, unzip, and open up the full London Stage Database.</p>
+<p><strong>Notes:</strong></p>
+<ul>
+<li>The chunk below downloads the dataset to the working directory.</li>
+<li>This is a pretty sizeable dataset, so if you run this yourself, be patient while it opens up!</li>
+</ul>
+<pre class="r"><code>library(tidyverse)
+
+json_path &lt;- &quot;https://londonstagedatabase.usu.edu/downloads/LondonStageJSON.zip&quot;
+download.file(json_path, &quot;LondonStageJSON.zip&quot;)
+unzip(&quot;LondonStageJSON.zip&quot;)
+london_stage_raw &lt;- jsonlite::fromJSON(&quot;LondonStageFull.json&quot;) %&gt;%
+    as_tibble()</code></pre>
+</div>
+<div id="finding-the-dates" class="section level2">
+<h2>Finding the dates</h2>
+<p>There are thirteen columns in this data. Let’s take a moment and look at the column names and content of the first few lines. Which of these columns contains the date informaiton?</p>
+<pre class="r"><code>london_stage_raw</code></pre>
+<pre><code>## # A tibble: 52,617 x 13
+##    EventId EventDate TheatreCode Season Volume Hathi CommentC TheatreId
+##    &lt;chr&gt;   &lt;chr&gt;     &lt;chr&gt;       &lt;chr&gt;  &lt;chr&gt;  &lt;chr&gt; &lt;chr&gt;    &lt;chr&gt;    
+##  1 0       16591029  city        1659-… 1      &quot;&quot;    The &lt;i&gt;… 63       
+##  2 1       16591100  mt          1659-… 1      &quot;&quot;    On 23 N… 206      
+##  3 2       16591218  none        1659-… 1      &quot;&quot;    Represe… 1        
+##  4 3       16600200  mt          1659-… 1      &quot;&quot;    6 Feb. … 206      
+##  5 4       16600204  cockpit     1659-… 1      &quot;&quot;    $Thomas… 73       
+##  6 5       16600328  dh          1659-… 1      &quot;&quot;    At &lt;i&gt;D… 90       
+##  7 6       16600406  none        1659-… 1      &quot;&quot;    &quot;&quot;       1        
+##  8 7       16600412  vh          1659-… 1      &quot;&quot;    Edition… 319      
+##  9 8       16600413  fh          1659-… 1      &quot;&quot;    &lt;i&gt;The … 116      
+## 10 9       16600416  none        1659-… 1      &quot;&quot;    &quot;&quot;       1        
+## # … with 52,607 more rows, and 5 more variables: Phase2 &lt;chr&gt;,
+## #   Phase1 &lt;chr&gt;, CommentCClean &lt;chr&gt;, BookPDF &lt;chr&gt;, Performances &lt;list&gt;</code></pre>
+<p>The <code>EventDate</code> column contains the date information, but notice that R does not think it’s a date!</p>
+<pre class="r"><code>class(london_stage_raw$EventDate)</code></pre>
+<pre><code>## [1] &quot;character&quot;</code></pre>
+<p>R thinks this is a character (dates encoded like <code>&quot;16591029&quot;</code>), because of the details of the data and the type guessing used by the process of reading in this data. This is NOT HELPFUL for us, as we need to store this information as a date type 📆 in order to explore the dates of this London stage data. We will use a function <code>ymd()</code> from the lubridate package to convert it. (There are other similar functions in lubridate, like <code>ymd_hms()</code> if you have time information, <code>mdy()</code> if your information is arranged differently, etc.)</p>
+<pre class="r"><code>library(lubridate)
+
+london_stage &lt;- london_stage_raw %&gt;%
+    mutate(EventDate = ymd(EventDate)) %&gt;%
+    filter(!is.na(EventDate))</code></pre>
+<pre><code>## Warning: 378 failed to parse.</code></pre>
+<p>Notice that we had some failures here; there were a few hundred dates with a day of <code>00</code> that could not be parsed. In the <code>filter()</code> line here, I’ve filtered those out.</p>
+<p>What happens now if I check the class of the <code>EventDate</code> column?</p>
+<pre class="r"><code>class(london_stage$EventDate)</code></pre>
+<pre><code>## [1] &quot;Date&quot;</code></pre>
+<p>We now have a column of type <code>Date</code> 🙌 which is just what we need. In this lesson we will explore what we can learn from this kind of date data.</p>
+</div>
+<div id="getting-years-and-months" class="section level2">
+<h2>Getting years and months</h2>
+<p>This dataset on the London stage spans more than a century. How can we look at the distribution of stage events over the years? The lubridate package contains functions like <code>year()</code> that let us get year components of a date.</p>
+<pre class="r"><code>year(today())</code></pre>
+<pre><code>## [1] 2019</code></pre>
+<p>Let’s count up the stage events by year in this dataset.</p>
+<pre class="r"><code>london_stage %&gt;%
+    mutate(EventYear = year(EventDate)) %&gt;%
+    count(EventYear)</code></pre>
+<pre><code>## # A tibble: 142 x 2
+##    EventYear     n
+##        &lt;dbl&gt; &lt;int&gt;
+##  1      1659     2
+##  2      1660    58
+##  3      1661   138
+##  4      1662    91
+##  5      1663    68
+##  6      1664    53
+##  7      1665    20
+##  8      1666    30
+##  9      1667   149
+## 10      1668   147
+## # … with 132 more rows</code></pre>
+<p>Looks to me like there are some big differences year-to-year. It would be easier to see this if we made a visualization.</p>
+<pre class="r"><code>london_stage %&gt;%
+    count(EventYear = year(EventDate)) %&gt;%
+    ggplot(aes(EventYear, n)) +
+    geom_area(fill = &quot;midnightblue&quot;, alpha = 0.8) +
+    labs(y = &quot;Number of events&quot;,
+         x = NULL)</code></pre>
+<p><img src="/blog/2019/2019-08-26-lubridate-london-stage_files/figure-html/unnamed-chunk-6-1.png" width="1440" /></p>
+<p>There was a dramatic increase in theater events between about 1710 and 1730. After 1750, the yearly count looks pretty stable.</p>
+<p>Do we see month-to-month changes? The lubridate package has a function very similar to <code>year()</code> but instead for finding the month of a date.</p>
+<pre class="r"><code>london_stage %&gt;%
+    ggplot(aes(month(EventDate))) +
+    geom_bar(fill = &quot;midnightblue&quot;, alpha = 0.8) +
+    labs(y = &quot;Number of events&quot;)</code></pre>
+<p><img src="/blog/2019/2019-08-26-lubridate-london-stage_files/figure-html/unnamed-chunk-7-1.png" width="1440" /></p>
+<p>Wow, that is dramatic! There are dramatically fewer events during the summer months than the rest of the year. We can make this plot easier to read by making a change to how we call the <code>month()</code> function, with <code>label = TRUE</code>.</p>
+<pre class="r"><code>london_stage %&gt;%
+    ggplot(aes(month(EventDate, label = TRUE))) +
+    geom_bar(fill = &quot;midnightblue&quot;, alpha = 0.8) +
+    labs(x = NULL,
+         y = &quot;Number of events&quot;)</code></pre>
+<p><img src="/blog/2019/2019-08-26-lubridate-london-stage_files/figure-html/unnamed-chunk-8-1.png" width="1440" /></p>
+<p>When you use <code>label = TRUE</code> here, the information is being stored as an ordered factor.</p>
+<p>In this dataset, London playhouses staged the <strong>most</strong> events in January.</p>
+<p>OK, one more! What day of the week has more theater events? The lubridate package has a function <code>wday()</code> package to get the day of the week for any date. This function also has a <code>label = TRUE</code> argument, like <code>month()</code>.</p>
+<pre class="r"><code>london_stage %&gt;%
+    ggplot(aes(wday(EventDate, label = TRUE))) +
+    geom_bar(fill = &quot;midnightblue&quot;, alpha = 0.8) +
+    labs(x = NULL,
+         y = &quot;Number of events&quot;)</code></pre>
+<p><img src="/blog/2019/2019-08-26-lubridate-london-stage_files/figure-html/unnamed-chunk-9-1.png" width="1440" /></p>
+<p>London theaters did <strong>not</strong> stage events on Sunday or Wednesday. Who knew?!?</p>
+</div>
+<div id="time-differences" class="section level2">
+<h2>Time differences</h2>
+<p>One of the most challenging parts of handling dates is finding time intervals, and lubridate can help with that!</p>
+<p>Let’s look at the individual theaters (tabulated in <code>TheatreId</code>) and see how long individual theaters tend to be in operation.</p>
+<pre class="r"><code>london_by_theater &lt;- london_stage %&gt;%
+    filter(TheatreCode != &quot;none&quot;) %&gt;% 
+    group_by(TheatreCode) %&gt;%
+    summarise(TotalEvents = n(),
+              MinDate = min(EventDate),
+              MaxDate = max(EventDate),
+              TimeSpan = as.duration(MaxDate - MinDate)) %&gt;%
+    arrange(-TotalEvents)
+
+london_by_theater</code></pre>
+<pre><code>## # A tibble: 233 x 5
+##    TheatreCode TotalEvents MinDate    MaxDate   
+##    &lt;chr&gt;             &lt;int&gt; &lt;date&gt;     &lt;date&gt;    
+##  1 dl                18451 1674-03-26 1800-06-18
+##  2 cg                12826 1662-05-09 1800-06-16
+##  3 hay                5178 1720-12-29 1800-09-16
+##  4 king&#39;s             4299 1714-10-23 1800-08-02
+##  5 lif                4117 1661-06-28 1745-10-07
+##  6 gf                 1832 1729-10-31 1772-10-23
+##  7 queen&#39;s             884 1705-04-09 1714-06-23
+##  8 marly               403 1750-08-16 1776-08-10
+##  9 bf                  257 1661-08-22 1767-09-07
+## 10 dg                  235 1671-06-26 1706-11-28
+## # … with 223 more rows, and 1 more variable: TimeSpan &lt;Duration&gt;</code></pre>
+<p>We have created a new dataframe here, with one row for each theater. The columns tell us</p>
+<ul>
+<li>how many theater events that theater had</li>
+<li>the first date that theater had an event</li>
+<li>the last date that theater had an event</li>
+<li>the <strong>duration</strong> of the difference between those two</li>
+</ul>
+<p>A duration is a special concept in lubridate of a time difference, but don’t get too bogged down in this. How did we calculate this duration? <em>We only had to subtract the two dates,</em> and then wrap it in the lubridate function <code>as.duration()</code>.</p>
+<p>Look at the data type that was printed out at the top of the column for <code>TimeSpan</code>; it’s not numeric, or integer, or any of the normal data types in R. It says <code>&lt;Duration&gt;</code>.</p>
+<p>What do you think will happen if we try to make to make a histogram for <code>TimeSpan</code>?</p>
+<pre class="r"><code>london_by_theater %&gt;% 
+    filter(TotalEvents &gt; 100) %&gt;%
+    ggplot(aes(TimeSpan)) +
+    geom_histogram(bins = 20)</code></pre>
+<pre><code>## Error: Incompatible duration classes (Duration, numeric). Please coerce with `as.duration`.</code></pre>
+<p><img src="/blog/2019/2019-08-26-lubridate-london-stage_files/figure-html/unnamed-chunk-10-1.png" width="1260" /></p>
+<p>We have an error! 🙀 This “duration” class is good for adding and subtracting dates, but less good once we want to go about plotting or doing math with other kinds of data (like, say, the number of total events). We need to <strong>coerce</strong> this to something more useful, now that we’re done subtracting the dates.</p>
+<p>Data that is being stored as a duration can be coerced with <code>as.numeric()</code>, and you can send another argument to say what kind of time increment you want back. For example, what if we want the number of years that each of these theaters was in operation in this dataset?</p>
+<pre class="r"><code>london_by_theater %&gt;%
+    mutate(TimeSpan = as.numeric(TimeSpan, &quot;year&quot;))</code></pre>
+<pre><code>## # A tibble: 233 x 5
+##    TheatreCode TotalEvents MinDate    MaxDate    TimeSpan
+##    &lt;chr&gt;             &lt;int&gt; &lt;date&gt;     &lt;date&gt;        &lt;dbl&gt;
+##  1 dl                18451 1674-03-26 1800-06-18   126.  
+##  2 cg                12826 1662-05-09 1800-06-16   138.  
+##  3 hay                5178 1720-12-29 1800-09-16    79.7 
+##  4 king&#39;s             4299 1714-10-23 1800-08-02    85.8 
+##  5 lif                4117 1661-06-28 1745-10-07    84.3 
+##  6 gf                 1832 1729-10-31 1772-10-23    43.0 
+##  7 queen&#39;s             884 1705-04-09 1714-06-23     9.20
+##  8 marly               403 1750-08-16 1776-08-10    26.0 
+##  9 bf                  257 1661-08-22 1767-09-07   106.  
+## 10 dg                  235 1671-06-26 1706-11-28    35.4 
+## # … with 223 more rows</code></pre>
+<p>A number of these theaters had events for over a century!</p>
+<p>If we wanted to see the number of months that each theater had events, we would change the argument.</p>
+<pre class="r"><code>london_by_theater %&gt;%
+    mutate(TimeSpan = as.numeric(TimeSpan, &quot;month&quot;))</code></pre>
+<pre><code>## # A tibble: 233 x 5
+##    TheatreCode TotalEvents MinDate    MaxDate    TimeSpan
+##    &lt;chr&gt;             &lt;int&gt; &lt;date&gt;     &lt;date&gt;        &lt;dbl&gt;
+##  1 dl                18451 1674-03-26 1800-06-18    1515.
+##  2 cg                12826 1662-05-09 1800-06-16    1657.
+##  3 hay                5178 1720-12-29 1800-09-16     957.
+##  4 king&#39;s             4299 1714-10-23 1800-08-02    1029.
+##  5 lif                4117 1661-06-28 1745-10-07    1011.
+##  6 gf                 1832 1729-10-31 1772-10-23     516.
+##  7 queen&#39;s             884 1705-04-09 1714-06-23     110.
+##  8 marly               403 1750-08-16 1776-08-10     312.
+##  9 bf                  257 1661-08-22 1767-09-07    1272.
+## 10 dg                  235 1671-06-26 1706-11-28     425.
+## # … with 223 more rows</code></pre>
+<p>We can use this kind of transformation to see the relationship between the number of events and length of time in operation. Convert the <code>Duration</code> object to a numeric value in months in order to make a plot.</p>
+<pre class="r"><code>library(ggrepel)
+
+london_by_theater %&gt;%
+    mutate(TimeSpan = as.numeric(TimeSpan, &quot;month&quot;)) %&gt;%
+    filter(TotalEvents &gt; 10) %&gt;%
+    ggplot(aes(TimeSpan, TotalEvents, label = TheatreCode)) +
+    geom_smooth(method = &quot;lm&quot;) +
+    geom_label_repel(family = &quot;IBMPlexSans&quot;) +
+    geom_point() +
+    scale_x_log10() +
+    scale_y_log10() +
+    labs(x = &quot;Months that theater was in operation&quot;,
+         y = &quot;Total events staged by theater&quot;)</code></pre>
+<p><img src="/blog/2019/2019-08-26-lubridate-london-stage_files/figure-html/theater_scatter-1.png" width="1800" /></p>
+<p>It makes sense that theaters open much longer had many more events, but we can also notice which theaters are particularly high or low in this chart. Theaters high in this chart hosted many events for how long they were in operation, and theaters low in this chart hosted few events for how long they were open.</p>
+<p>This plot opens up many more possibilities for exploration, such as whether theaters were in constant operation or took breaks. Further date handling offers the ability to address such questions! Let me know if you have any questions. 📆</p>
+</div>

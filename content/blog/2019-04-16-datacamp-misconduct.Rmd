@@ -1,0 +1,49 @@
+---
+title: "Writing a letter to DataCamp"
+date: 2019-04-16
+slug: "datacamp-misconduct"
+tags: [rstats]
+description: "Don't take my DataCamp courses"
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+library(ggplot2)
+library(silgelib)
+library(tidyverse)
+theme_set(theme_plex())
+```
+
+Since 2017 I have been an instructor for DataCamp, the [VC-backed](https://www.crunchbase.com/organization/data-camp) online data science education platform. What this means is that I am not an employee, but I have developed content for the company as a contractor. I have two courses there, one on text mining and one on practical supervised machine learning.
+
+About two weeks ago, DataCamp published a [blog post](https://www.datacamp.com/community/blog/note-to-our-community) outlining an incident of sexual misconduct at the company. The post was published one day after a group of over 100 instructors sent a letter to DataCamp saying that the way the company had handled sexual misconduct was not acceptable and the company needed to do better. I was one of the signers of the letter, and in fact was one of the writers of the letter as well as one of the folks who helped organize this group action. This letter came after many months of instructors like me attempting to engage with DataCamp in productive discussion. It did not threaten to go public or call for the executive's firing, but it did bring up how the [growing rumors and uncertainty](https://www.glassdoor.com/Reviews/Employee-Review-DataCamp-RVW22333166.htm) around misconduct at DataCamp have been a problem for the personal reputations of instructors. For example, I have had people I don't know come up to me at conferences and say things like, "I heard something bad happened at DataCamp. What's up?"
+
+People in the broader data science community often associate instructors with DataCamp, but it turns out we have very little control or influence with the company (outside of what effectively turned into group organizing). As contractors, we have less influence than regular employees. With the way most of our contracts are written, we don't even have the ability to end our affiliations with the company. I personally regret signing my contract and will bring some hard-learned lessons about such contracts to any future collaborations. I allowed relationships I have with people who work for DataCamp to influence my perception of the contract I was signing.
+
+I think it's likely that DataCamp management thought or hoped that their post was enough to placate instructors, and that they essentially did what we asked in the letter. I am deeply disappointed that this was their response. The main problem is how the leadership of DataCamp has chosen to deal with and disclose an incident like this. Although the post does clearly say that what happened was inappropriate and that the dynamic between [an executive](https://ironholds.org/datacamp/) and an employee makes that particularly egregious, detail is used in harmful and victim-blaming ways. Every detail that might possibly put DataCamp in a better light is included, and details that provide a counternarrative are excluded. This is particularly frustrating to me because I have given feedback to multiple individuals at DataCamp that this kind of language is unproductive and unhelpful for rebuilding trust with instructors and the broader community, as well as largely unpersuasive to most readers. We have all read enough of these committee-written, half-hearted "apologies" by now that such strategies are obvious.
+
+Perhaps you have noticed that [searching for information about sexual misconduct at DataCamp does not surface their own post](https://twitter.com/heatherklus/status/1115400136367067137). This is because the company added a `noindex` flag to this post (and **only** this post, unlike their other blog posts) so that it would not be indexed by search engines like Google. 
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1116709899159916544')
+```
+
+This particular choice on the part of DataCamp is true to the character of the rest of my interactions with the company over the past year or so. I have hesitated to go into a lot of detail publicly about what's happened with me because others have [experienced](https://dhavide.github.io/a-note-to-our-commuity-on-building-trust.html) [much worse](http://third-bit.com/2019/04/15/an-exchange-with-datacamp.html), but I will share a few things for context. Employees refused to respond in email/writing about concerns I raised, and instead always deferred to scheduling (time-consuming and yet unproductive) one-on-one calls. There *was* one group meeting for instructors who had raised concerns, but it was organized as a webinar where instructors could not speak, could not see who else was in the meeting, and could not see questions typed by other participants.
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1100811746653155328')
+```
+
+
+This has been painful in many ways. For starters, it is painful to learn how harm has come to a respected member of my community through a company that I have directly helped make money, and how little has been done for so long done to make this right. It is painful to realize I was not so savvy in signing my contract. It is painful to navigate the souring of a working relationship with a company where people who I know and care about are employees. I don't really know how to handle this difficult situation other than to affirm the value of these individuals while telling the truth about what has happened.
+
+I don’t expect the companies or people I work with to be perfect, and in fact, I myself work for an imperfect company. What I do need to maintain a continuing relationship with a company and/or people is trustworthiness and accountability. I am an optimist and still hold out hope for the folks at DataCamp to demonstrate that I (and the broader community) should trust them. For now, though, much like [Noam Ross writes in his post](https://noamross.github.io/datacamp-sexual-assault/), I urge everyone to avoid using the materials I have developed for DataCamp, if at all possible for you. 
+
+> The way to make men face consequences for their decisions is to force repercussions via companies and institutions. So I hope you don’t take my DataCamp course. I hope you will stop using DataCamp and let them know this is why. I hope if your company uses DataCamp you convince them to stop buying licenses. I hope if you invest in or advertise with or accept sponsorships from DataCamp you stop.
+
+
+Like many other instructors, I am looking into options for making these or similar materials available openly. In the meantime, my book on text mining (written with my valued coauthor David Robinson) is [available entirely online](https://www.tidytextmining.com/), and I have [blog posts](https://juliasilge.com/blog/) and [tutorials](https://github.com/juliasilge/deming2018) freely available on many aspects of text mining.
+
+

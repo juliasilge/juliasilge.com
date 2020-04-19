@@ -1,0 +1,139 @@
+---
+title: "tidytext 0.1.3"
+date: 2017-06-18
+slug: "tidytext-0-1-3"
+tags: [rstats]
+---
+
+
+
+<p>I am pleased to announce that tidytext 0.1.3 is <a href="https://cran.r-project.org/package=tidytext">now on CRAN</a>!</p>
+<p>In this release, my collaborator <a href="http://varianceexplained.org/">David Robinson</a> and I have fixed a handful of bugs, added tidiers for LDA models from the <a href="https://cran.r-project.org/package=mallet">mallet</a> package, and updated functions for changes to <a href="https://github.com/kbenoit/quanteda">quanteda’s</a> API. You can check out the <a href="https://github.com/juliasilge/tidytext/blob/master/NEWS.md">NEWS</a> for more details on changes.</p>
+<p>One enhancement in this release is the addition of the <a href="https://www3.nd.edu/~mcdonald/Word_Lists.html">Loughran and McDonald sentiment lexicon</a> of words specific to financial reporting. Sentiment lexicons are lists of words that are used to assess the emotion or opinion content of text by adding up the sentiment scores of individual words within that text; the tidytext package contains three general purpose English sentiment lexicons. The positive or negative meaning of a word can depend on its context, though. A word like “risk” has a negative meaning in most general contexts but may be more neutral for financial reporting. Context-specific sentiment lexicons like the Loughran-McDonald dictionary provide a way to deal with this.</p>
+<p>This financial lexicon labels words with six possible sentiments.</p>
+<pre class="r"><code>library(tidytext)
+library(tidyverse)
+
+get_sentiments(&quot;loughran&quot;) %&gt;%
+    count(sentiment, sort = TRUE)</code></pre>
+<pre><code>## # A tibble: 6 x 2
+##      sentiment     n
+##          &lt;chr&gt; &lt;int&gt;
+## 1     negative  2355
+## 2    litigious   903
+## 3     positive   354
+## 4  uncertainty   297
+## 5 constraining   184
+## 6  superfluous    56</code></pre>
+<div id="an-example" class="section level2">
+<h2>An example</h2>
+<p>I recently saw <a href="http://michaeltoth.me/sentiment-analysis-of-warren-buffetts-letters-to-shareholders.html">a sentiment analysis by Michael Toth</a> of Warren Buffett’s letters to shareholders. It’s a super interesting analysis, done well, but we can see from some of the plots in that analysis that the specifically financial nature of these documents would make a financial sentiment lexicon a great choice. Let’s scrape the letters from Berkshire Hathaway, Warren Buffett’s company, and then implement a sentiment analysis using this new lexicon.</p>
+<pre class="r"><code>library(rvest)
+library(pdftools)
+
+urls_oldest &lt;- paste0(&quot;http://www.berkshirehathaway.com/letters/&quot;, 
+                     seq(1977, 1997), &quot;.html&quot;)
+html_urls &lt;- c(urls_oldest,
+               &quot;http://www.berkshirehathaway.com/letters/1998htm.html&quot;,
+               &quot;http://www.berkshirehathaway.com/letters/1999htm.html&quot;,
+               &quot;http://www.berkshirehathaway.com/2000ar/2000letter.html&quot;,
+               &quot;http://www.berkshirehathaway.com/2001ar/2001letter.html&quot;)
+
+letters_html &lt;- html_urls %&gt;%
+    map_chr(~ read_html(.) %&gt;% 
+                html_text())
+
+urls_newest &lt;- paste0(&quot;http://www.berkshirehathaway.com/letters/&quot;, 
+                      seq(2003, 2016), &quot;ltr.pdf&quot;)
+
+pdf_urls &lt;- c(&quot;http://www.berkshirehathaway.com/letters/2002pdf.pdf&quot;,
+              urls_newest)
+
+letters_pdf &lt;- pdf_urls %&gt;%
+    map_chr(~ pdf_text(.) %&gt;% paste(collapse = &quot; &quot;))
+
+letters &lt;- data_frame(year = seq(1977, 2016),
+                      text = c(letters_html, letters_pdf))</code></pre>
+<p>Now we have the letters, and can convert this to a tidy text format.</p>
+<pre class="r"><code>tidy_letters &lt;- letters %&gt;%
+    unnest_tokens(word, text) %&gt;%
+    add_count(year) %&gt;%
+    rename(year_total = n)
+
+tidy_letters</code></pre>
+<pre><code>## # A tibble: 486,560 x 3
+##     year         word year_total
+##    &lt;int&gt;        &lt;chr&gt;      &lt;int&gt;
+##  1  1977   chairman&#39;s       3063
+##  2  1977       letter       3063
+##  3  1977         1977       3063
+##  4  1977    berkshire       3063
+##  5  1977     hathaway       3063
+##  6  1977          inc       3063
+##  7  1977           to       3063
+##  8  1977          the       3063
+##  9  1977 stockholders       3063
+## 10  1977           of       3063
+## # ... with 486,550 more rows</code></pre>
+<p>Next, let’s implement the sentiment analysis.</p>
+<pre class="r"><code>letter_sentiment &lt;- tidy_letters %&gt;%
+    inner_join(get_sentiments(&quot;loughran&quot;))
+
+letter_sentiment</code></pre>
+<pre><code>## # A tibble: 20,921 x 4
+##     year        word year_total   sentiment
+##    &lt;int&gt;       &lt;chr&gt;      &lt;int&gt;       &lt;chr&gt;
+##  1  1977      better       3063    positive
+##  2  1977 anticipated       3063 uncertainty
+##  3  1977       gains       3063    positive
+##  4  1977       gains       3063    positive
+##  5  1977      losses       3063    negative
+##  6  1977       gains       3063    positive
+##  7  1977      losses       3063    negative
+##  8  1977 anticipated       3063 uncertainty
+##  9  1977   indemnity       3063   litigious
+## 10  1977      better       3063    positive
+## # ... with 20,911 more rows</code></pre>
+<p>Now we have all we need to see the relative changes in these sentiments over the years.</p>
+<pre class="r"><code>letter_sentiment %&gt;%
+    count(year, year_total, sentiment) %&gt;%
+    filter(sentiment %in% c(&quot;positive&quot;, &quot;negative&quot;, 
+                            &quot;uncertainty&quot;, &quot;litigious&quot;)) %&gt;%
+    mutate(sentiment = factor(sentiment, levels = c(&quot;negative&quot;,
+                                                    &quot;positive&quot;,
+                                                    &quot;uncertainty&quot;,
+                                                    &quot;litigious&quot;))) %&gt;%
+    ggplot(aes(year, n / year_total, fill = sentiment)) +
+    geom_area(position = &quot;identity&quot;, alpha = 0.5) +
+    labs(y = &quot;Relative frequency&quot;, x = NULL,
+         title = &quot;Sentiment analysis of Warren Buffett&#39;s shareholder letters&quot;,
+         subtitle = &quot;Using the Loughran-McDonald lexicon&quot;)</code></pre>
+<p><img src="/blog/2017/2017-06-18-tidytext-0-1-3_files/figure-html/sentiment-1.png" width="1440" /></p>
+<p>We see negative sentiment spiking, higher than positive sentiment, during the financial upheaval of 2008, the collapse of the dot-com bubble in the early 2000s, and the recession of the 1990s. Overall, though, notice that the balance of positive to negative sentiment is not as skewed to positive as when you use <a href="http://michaeltoth.me/sentiment-analysis-of-warren-buffetts-letters-to-shareholders.html">one of the general purpose sentiment lexicons</a>.</p>
+<p>This happens because of the words that are driving the sentiment score in these different cases. When using the financial sentiment lexicon, the words have specifically been chosen for a financial context. What words are driving these sentiment scores?</p>
+<pre class="r"><code>letter_sentiment %&gt;%
+    count(sentiment, word) %&gt;%
+    filter(sentiment %in% c(&quot;positive&quot;, &quot;negative&quot;, 
+                            &quot;uncertainty&quot;, &quot;litigious&quot;)) %&gt;%
+    group_by(sentiment) %&gt;%
+    top_n(15) %&gt;%
+    ungroup %&gt;%
+    mutate(word = reorder(word, n)) %&gt;%
+    mutate(sentiment = factor(sentiment, levels = c(&quot;negative&quot;,
+                                                    &quot;positive&quot;,
+                                                    &quot;uncertainty&quot;,
+                                                    &quot;litigious&quot;))) %&gt;%
+    ggplot(aes(word, n, fill = sentiment)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    scale_y_continuous(expand = c(0,0)) +
+    facet_wrap(~sentiment, scales = &quot;free&quot;) +
+    labs(x = NULL, y = &quot;Total number of occurrences&quot;,
+         title = &quot;Words driving sentiment scores in Warren Buffett&#39;s shareholder letters&quot;,
+         subtitle = &quot;From the Loughran-McDonald lexicon&quot;)</code></pre>
+<p><img src="/blog/2017/2017-06-18-tidytext-0-1-3_files/figure-html/by_word-1.png" width="1260" /></p>
+</div>
+<div id="the-end" class="section level2">
+<h2>The End</h2>
+<p>Checking which words are driving a sentiment score is not only important when dealing with financial text, <a href="http://tidytextmining.com/sentiment.html#most-positive-negative">but all text</a>; using tidy data principles makes it possible and not too difficult to dig into such an analysis. Our upcoming book <a href="https://www.amazon.com/Text-Mining-R-tidy-approach/dp/1491981652/"><em>Text Mining with R</em></a> explores how applying tidy data principles to this and lots of other text mining tasks makes your time and energy well spent. In the meantime, get the new version of <a href="https://cran.r-project.org/package=tidytext">tidytext</a> and let us know on <a href="https://github.com/juliasilge/tidytext/issues">GitHub</a> if you run into any issues!</p>
+</div>

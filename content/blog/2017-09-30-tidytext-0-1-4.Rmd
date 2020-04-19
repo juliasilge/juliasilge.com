@@ -1,0 +1,47 @@
+---
+title: "tidytext 0.1.4"
+date: 2017-09-30
+slug: "tidytext-0-1-4"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180)
+options(width=80, dplyr.width = 150)
+library(ggplot2)
+library(silgelib)
+theme_set(theme_roboto())
+```
+
+
+I am pleased to announce that [tidytext 0.1.4](https://cran.r-project.org/package=tidytext) is now on CRAN!
+
+This release of our package for text mining using tidy data principles has an excellent collection of delightfulness in it. First off, all the important functions in tidytext now support support non-standard evaluation through the [tidyeval framework](http://dplyr.tidyverse.org/articles/programming.html).
+
+```{r}
+library(janeaustenr)
+library(tidytext)
+library(dplyr)
+
+input_var <- quo(text)
+output_var <- quo(word)
+
+data_frame(text = prideprejudice) %>%
+    unnest_tokens(!! output_var, !! input_var)
+```
+
+I have found the tidyeval framework useful already in my day job when writing functions using dplyr for complex data analysis tasks, so we are glad to have this support in tidytext. The older underscored functions (like `unnest_tokens_()`) that took only strings as arguments are still in the package for now, but tidyeval is the way to go, everybody!
+
+I also used [pkgdown](https://github.com/hadley/pkgdown) to build a [website](https://juliasilge.github.io/tidytext/) to explore tidytext's documentation and vignettes.
+
+[![](/figs/2017-09-30-tidytext-0-1-4/pkgdown_screenshot.png)](https://juliasilge.github.io/tidytext/)
+
+Our [book website](http://tidytextmining.com/) of course contains a lot of information about how to use tidytext, but the [pkgdown site](https://juliasilge.github.io/tidytext/) has a bit of a different focus in that you can explicitly see all the function documentation and such. Getting this site up and running went extremely smoothly, and I have not worked hard to customize it; this is just all the defaults. In my experience here, the relative bang for one's buck in setting up a pkgdown site is extremely good.
+
+Another exciting addition to this release of tidytext are tidiers and support for [Structural Topic Models](http://www.structuraltopicmodel.com/) from the [stm](https://cran.r-project.org/package=stm) package using tidy data principles. I am becoming a real fan of this implementation of topic modeling in R after experimenting with it for a while (no rJava! so fast!) and soon I'll have a complete code-through with some example text, *The Adventures of Sherlock Holmes*.
+
+<div style="width:100%;height:0;padding-bottom:56%;position:relative;"><iframe src="https://giphy.com/embed/26FLfT1xLYBAB8mMU" width="100%" height="100%" style="position:absolute" frameBorder="0" class="giphy-embed" allowFullScreen></iframe></div><p><a href="https://giphy.com/gifs/sherlock-bbc-one-bbc1-26FLfT1xLYBAB8mMU">via GIPHY</a></p>
+
+There are a few other minor changes and bug fixes in this release as well. Get the new version of [tidytext](https://cran.r-project.org/package=tidytext) and let us know on [GitHub](https://github.com/juliasilge/tidytext/issues) if you have any issues!

@@ -1,0 +1,74 @@
+---
+title: "New sports from random emoji"
+date: 2017-11-25
+slug: "emoji-sports"
+tags: [rstats]
+---
+
+
+
+<p>I love emoji ❤️ and I love xkcd, so <a href="https://xkcd.com/1920/">this recent comic</a> from Randall Munroe was quite a delight for me.</p>
+<div class="figure">
+<img src="https://imgs.xkcd.com/comics/emoji_sports.png" />
+
+</div>
+<p>I sat there, enjoying the thought of these new sports like horse hole and multiplayer avocado and I thought, “I can make more of these in just the barest handful of lines of code”. This is largely thanks to the <a href="https://github.com/hadley/emo">emo</a> package by Hadley Wickham, which if you haven’t installed and started using yet, WHY NOT??? 😱</p>
+<pre class="r"><code>emoji_sports &lt;- function(n) {
+    data &lt;- dplyr::sample_n(emo::jis, n)
+    emo::ji_glue(paste(dplyr::pull(data, emoji),
+                       collapse = &quot;&quot;))
+}</code></pre>
+<p>This function uses the <code>jis</code> dataset from the emo package, sample a few of them, and then prints them out in a R Markdown document, which is what I use to blog. Let’s make some!</p>
+<div id="section" class="section level2">
+<h2>🤵🏼🤕🙅🏿‍♂️</h2>
+<p>Excellent. This new sport is a head injury formalwear competition; it’s judged very strictly.</p>
+</div>
+<div id="section-1" class="section level2">
+<h2>🇸🇳🙏🙍🏿‍♀️</h2>
+<p>Here we see the new sport of being thankful for Senegalese culture.</p>
+</div>
+<div id="section-2" class="section level2">
+<h2>⭐️🐣🔪</h2>
+<p>This new sport is a scary one, where stars are awarded to the baby chicks with the best knife-throwing skills.</p>
+<p>Some of the sports in the xkcd comic have only two characters, and we can make those as well.</p>
+</div>
+<div id="section-3" class="section level2">
+<h2>🤷🏻🏃🏻‍♂️</h2>
+<p>Ah yes, we’ll soon all be enjoying the sport of running long distances for no understandable reason. I think some of you probably <em>already</em> enjoy this sport.</p>
+<p>Or we can generate lots with purrr.</p>
+<pre class="r"><code>library(purrr)
+
+map(sample(c(2,3), 10, replace = TRUE),
+    emoji_sports)</code></pre>
+<pre><code>## [[1]]
+## 🕝️👷🏼‍♀️ 
+## 
+## [[2]]
+## 🚕🧘🏿‍♀️🧕🏾 
+## 
+## [[3]]
+## ⚾🤞🏾 
+## 
+## [[4]]
+## 👂🏿🔈️🤷🏻‍♂️ 
+## 
+## [[5]]
+## 👳🏿☃✡ 
+## 
+## [[6]]
+## 🕸️🕟️🤚🏻 
+## 
+## [[7]]
+## 🇧🇷🛃 
+## 
+## [[8]]
+## 🧝🏾‍♂️🛌🏽🦅 
+## 
+## [[9]]
+## ☂↘️✋ 
+## 
+## [[10]]
+## 🎖️💂🏿‍♂️</code></pre>
+<p>Some of those emojis aren’t printing quite as well, but there are definitely some winners (timed spiderweb fingerknitting and the like).</p>
+<p>I could keep going all day, but I’ll wrap it up here. 👋 Let me know if you have any questions!</p>
+</div>

@@ -1,0 +1,275 @@
+---
+title: "TensorFlow, Jane Austen, and Text Generation"
+date: 2018-10-04
+slug: "tensorflow-generation"
+tags: [rstats]
+---
+
+
+
+<p>I remember the first time I saw a deep learning text generation project that was truly compelling and delightful to me. It was in 2016 when <a href="https://twitter.com/_Pandy/status/689209034143084547">Andy Herd generated new <em>Friends</em> scenes</a> by training a recurrent neural network on all the show’s episodes. Herd’s work went pretty viral at the time and I thought:</p>
+<iframe src="https://giphy.com/embed/3oEjHTazrdiQeYaR68" width="480" height="336" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+<p>
+<a href="https://giphy.com/gifs/inpulsedm-3oEjHTazrdiQeYaR68">via GIPHY</a>
+</p>
+<p>And also:</p>
+<iframe src="https://giphy.com/embed/CDoxe35inxhfO" width="480" height="330" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+<p>
+<a href="https://giphy.com/gifs/CDoxe35inxhfO">via GIPHY</a>
+</p>
+<p>At the time I dabbled a bit with <a href="http://karpathy.github.io/2015/05/21/rnn-effectiveness/">Andrej Karpathy’s tutorials</a> for character-level RNNs; his work and tutorials undergird a lot of the kind of STUNT TEXT GENERATION work we see in the world. Python is not my strongest language, though, and I did not ever have a real motivation to understand the math of what was going on. I watched the masters like <a href="https://twitter.com/JanelleCShane">Janelle Shane</a> instead.</p>
+<p><a href="https://tensorflow.rstudio.com/">TensorFlow for R</a> has changed that for me. Not only is the R interface that RStudio has developed just <em>beautiful</em>, but now these fun text generation projects provide a step into understanding how these neural networks model work at all, and deal with text in particular. Let’s step through how to take the text of <em>Pride and Prejudice</em> and generate 🙌 new 🙌 Jane-Austen-esque text.</p>
+<p>This code borrows heavily from a couple of excellent sources.</p>
+<ul>
+<li><a href="https://github.com/jnolis/banned-license-plates">Jonathan Nolis’ project on offensive license plates</a> (That link is for their code; you can read a <a href="https://towardsdatascience.com/using-deep-learning-to-generate-offensive-license-plates-619b163ed937">great narrative explanation as well</a>.)</li>
+<li><a href="https://keras.rstudio.com/articles/examples/lstm_text_generation.html">RStudio’s example code for text generation</a></li>
+</ul>
+<p>Before starting, you will need to install keras so be sure to check out <a href="https://keras.rstudio.com/reference/install_keras.html">details on installation</a>.</p>
+<div id="tokenize" class="section level2">
+<h2>Tokenize</h2>
+<p>We are going to train a character-level language model, which means the model will take a single character and then predict what character should come next, based on the ones that have come before. First step? We need to take <em>Pride and Prejudice</em> and divide it up into individual characters.</p>
+<iframe src="https://giphy.com/embed/l4JyY6IdblsismaeA" width="480" height="297" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+<p>
+<a href="https://giphy.com/gifs/bbc-drama-pride-and-prejudice-l4JyY6IdblsismaeA">via GIPHY</a>
+</p>
+<p>The code below <em>keeps</em> both capital and lowercase letters, and builds a model that learns when to use which one. This is computationally more intensive than training a model that only learns about the letters themselves in lower case; if you want to start off with that kind of model, change to the default behavior for <code>tokenize_characters()</code> of <code>lowercase = TRUE</code>.</p>
+<pre class="r"><code>library(keras)
+library(tidyverse)
+library(janeaustenr)
+library(tokenizers)
+
+max_length &lt;- 40
+
+text &lt;- austen_books() %&gt;% 
+    filter(book == &quot;Pride &amp; Prejudice&quot;) %&gt;%
+    pull(text) %&gt;%
+    str_c(collapse = &quot; &quot;) %&gt;%
+    tokenize_characters(lowercase = FALSE, strip_non_alphanum = FALSE, simplify = TRUE)
+
+print(sprintf(&quot;Corpus length: %d&quot;, length(text)))</code></pre>
+<pre><code>## [1] &quot;Corpus length: 684767&quot;</code></pre>
+<pre class="r"><code>chars &lt;- text %&gt;%
+    unique() %&gt;%
+    sort()
+
+print(sprintf(&quot;Total characters: %d&quot;, length(chars)))</code></pre>
+<pre><code>## [1] &quot;Total characters: 74&quot;</code></pre>
+<p>A good start!</p>
+</div>
+<div id="chop-chop-chop" class="section level2">
+<h2>CHOP CHOP CHOP</h2>
+<p>Next we want to cut the whole text into pieces: sequences of <code>max_length</code> characters. These will be the chunks of text that we use for training.</p>
+<pre class="r"><code>dataset &lt;- map(
+    seq(1, length(text) - max_length - 1, by = 3), 
+    ~list(sentence = text[.x:(.x + max_length - 1)], 
+          next_char = text[.x + max_length])
+)
+
+dataset &lt;- transpose(dataset)</code></pre>
+</div>
+<div id="vectorize" class="section level2">
+<h2>Vectorize</h2>
+<p>Now it’s time to make a big set of vectors of these chunks of text. If you make <code>max_length</code> larger, this <code>vectors</code> object can get unwieldy in terms of memory.</p>
+<pre class="r"><code>vectorize &lt;- function(data, chars, max_length){
+    x &lt;- array(0, dim = c(length(data$sentence), max_length, length(chars)))
+    y &lt;- array(0, dim = c(length(data$sentence), length(chars)))
+    
+    for(i in 1:length(data$sentence)){
+        x[i,,] &lt;- sapply(chars, function(x){
+            as.integer(x == data$sentence[[i]])
+        })
+        y[i,] &lt;- as.integer(chars == data$next_char[[i]])
+    }
+    
+    list(y = y,
+         x = x)
+}
+
+vectors &lt;- vectorize(dataset, chars, max_length)</code></pre>
+</div>
+<div id="model-definition" class="section level2">
+<h2>Model definition</h2>
+<p>So far all we’ve been doing is chopping text into bits and rearranging data structures. Finally, it is time to delve into ❇️ DEEP LEARNING ❇️. The first step is to create a model. I’ve used the same parameters as <a href="https://keras.rstudio.com/articles/examples/lstm_text_generation.html">the RStudio LSTM example</a>; this next step is fast as it is only defining the kind of model architecture we are going to use.</p>
+<pre class="r"><code>create_model &lt;- function(chars, max_length){
+    keras_model_sequential() %&gt;%
+        layer_lstm(128, input_shape = c(max_length, length(chars))) %&gt;%
+        layer_dense(length(chars)) %&gt;%
+        layer_activation(&quot;softmax&quot;) %&gt;% 
+        compile(
+            loss = &quot;categorical_crossentropy&quot;, 
+            optimizer = optimizer_rmsprop(lr = 0.01)
+        )
+}</code></pre>
+<p>Let’s also make a function that fits the model for a set number of epochs.</p>
+<pre class="r"><code>fit_model &lt;- function(model, vectors, epochs = 1){
+    model %&gt;% fit(
+        vectors$x, vectors$y,
+        batch_size = 128,
+        epochs = epochs
+    )
+    NULL
+}</code></pre>
+</div>
+<div id="model-training-results" class="section level2">
+<h2>Model training &amp; results</h2>
+<p>Now it’s almost time to <strong>train</strong> the model on our data. Let’s make some more functions.</p>
+<p>This one generates a phrase from a model, text, set of characters, and parameters like the maximum length of phrase and diversity, i.e. how WILD we are going to let the model be.</p>
+<pre class="r"><code>generate_phrase &lt;- function(model, text, chars, max_length, diversity){
+    
+    # this function chooses the next character for the phrase
+    choose_next_char &lt;- function(preds, chars, temperature){
+        preds &lt;- log(preds) / temperature
+        exp_preds &lt;- exp(preds)
+        preds &lt;- exp_preds / sum(exp(preds))
+        
+        next_index &lt;- rmultinom(1, 1, preds) %&gt;% 
+            as.integer() %&gt;%
+            which.max()
+        chars[next_index]
+    }
+    
+    # this function takes a sequence of characters and turns it into a numeric array for the model
+    convert_sentence_to_data &lt;- function(sentence, chars){
+        x &lt;- sapply(chars, function(x){
+            as.integer(x == sentence)
+        })
+        array_reshape(x, c(1, dim(x)))
+    }
+    
+    # the inital sentence is from the text
+    start_index &lt;- sample(1:(length(text) - max_length), size = 1)
+    sentence &lt;- text[start_index:(start_index + max_length - 1)]
+    generated &lt;- &quot;&quot;
+    
+    # while we still need characters for the phrase
+    for(i in 1:(max_length * 20)){
+        
+        sentence_data &lt;- convert_sentence_to_data(sentence, chars)
+        
+        # get the predictions for each next character
+        preds &lt;- predict(model, sentence_data)
+        
+        # choose the character
+        next_char &lt;- choose_next_char(preds, chars, diversity)
+        
+        # add it to the text and continue
+        generated &lt;- str_c(generated, next_char, collapse = &quot;&quot;)
+        sentence &lt;- c(sentence[-1], next_char)
+    }
+    
+    generated
+}</code></pre>
+<p>Notice that we seed the first characters for the model to use for prediction with a real chunk of text from <em>Pride and Prejudice</em>.</p>
+<p>This next function fits the model to the set of vectors, and then generates phrases from the current version of the model.</p>
+<pre class="r"><code>iterate_model &lt;- function(model, text, chars, max_length, 
+                          diversity, vectors, iterations){
+    for(iteration in 1:iterations){
+        
+        message(sprintf(&quot;iteration: %02d ---------------\n\n&quot;, iteration))
+        
+        fit_model(model, vectors)
+        
+        for(diversity in c(0.2, 0.5, 1)){
+            
+            message(sprintf(&quot;diversity: %f ---------------\n\n&quot;, diversity))
+            
+            current_phrase &lt;- 1:10 %&gt;% 
+                map_chr(function(x) generate_phrase(model,
+                                                    text,
+                                                    chars,
+                                                    max_length, 
+                                                    diversity))
+            
+            message(current_phrase, sep=&quot;\n&quot;)
+            message(&quot;\n\n&quot;)
+            
+        }
+    }
+    NULL
+}</code></pre>
+<p>I’m sorry to say that we haven’t really done anything yet.</p>
+<iframe src="https://giphy.com/embed/26FLdSILnEZTBFPjO" width="480" height="310" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+<p>
+<a href="https://giphy.com/gifs/bbc-drama-pride-and-prejudice-26FLdSILnEZTBFPjO">via GIPHY</a>
+</p>
+</div>
+<div id="actually-run-the-model" class="section level2">
+<h2>Actually run the model</h2>
+<p>But now! Now we are going to train the model.</p>
+<p>How many times should you iterate through the model? You want to the loss to stabilize (lower is better) but once the loss is at whatever low value we can achieve for the data we have and the model architecture we have chosen, iterating more and more isn’t going to help anymore. For me with this data, about 40 iterations worked well.</p>
+<pre class="r"><code>model &lt;- create_model(chars, max_length)
+
+iterate_model(model, text, chars, max_length, diversity, vectors, 40)</code></pre>
+<pre><code>## NULL</code></pre>
+<p>Now let’s see what we’ve got! Let’s look at several values for <code>diversity</code>, the measure for how creative/wacky we let the model be in which character to choose next in a sequence. We’ll try out values between 0.2 (less creative) and 0.6 (more creative).</p>
+<pre class="r"><code>result &lt;- data_frame(diversity = rep(c(0.2, 0.4, 0.6), 20)) %&gt;%
+    mutate(phrase = map_chr(diversity,
+                            ~ generate_phrase(model, text, chars, max_length, .x))) %&gt;%
+    arrange(diversity)
+
+result %&gt;%
+    sample_n(10) %&gt;%
+    arrange(diversity) %&gt;%
+    kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">diversity</th>
+<th align="left">phrase</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">0.2</td>
+<td align="left">sisters were the manner were so much the same family to be a moment to her sisters were not to see him and desired to her own party of the word, and the person was a man who had been a compliment of any of the subject. It was to be sure the subject of the satisfaction of the word, who cannot be well to be not betrod of the contrary to be sure the manner of the contrury on the part, and the sentiment of her sisters were so much and real the same proper and such a comfort of her sisters were at the day to be allow the family and such a word. If they were a disappointment of her family of the disappointment of the attention of the manner to her sisters were so much that I have not a few moment and a family to be all the manner of the consents of her family, who cannot do not been the manner t</td>
+</tr>
+<tr class="even">
+<td align="right">0.2</td>
+<td align="left">s part, and was a contrive to her family to the discovery of the manner and the servance of her sisters were the person of the sentiment of the end of the subject of the manner to her family as they were all her attention of her family, and the manner of any of her sisters were of the family of the discovered to the evening to her aunt, and she could not be contrive with the subject, and she had been all the two distress of the contrury in the of her and the happiness of the sentence to her family of the contruct of her sisters were allow the consents of the evening the person were so after the connection of the contriculation of the discovered to be the subject of the attention of the consents and the servance of the subject of the sent the subject of the word, who had been a mind with th</td>
+</tr>
+<tr class="odd">
+<td align="right">0.4</td>
+<td align="left">fect a fortnight to be many of the connected to supplemer of an address to him in the subject. m*va coseZ–and MZbZbZbZZZborness of the contrusion of her family, and was to supplecity of her sisters were needed to her attention with her behaviour of the minutes to much to prevent the minutes to her sisters were to determined to support to the proper an agitation of the manner and pain her sisters were easily were a follow a great ease to her attention of the proper any of the propers I am allow the same intention of the power to her aunt, who cannot all me to her delight to expect to the distress of the contricumed to controsted to see the persuaded her sisters were allow to please in a moment with the respect a money and contrusting her aunt to make him to be p</td>
+</tr>
+<tr class="even">
+<td align="right">0.4</td>
+<td align="left">. Mr. Wickham had been a look and contrusment of her favourable attention was said, and in the family of the compliment of his great really in the perfect that they were of a money, and who had seen the place who was displeasure in the attentions had seen and heart of her lady in the after many aunt, and the means of the rest of the discheme to be allow to be a family, and she had soon afterwards paid it to have seen the distress of her friend and a disappointment of her connection to be not to be the sentiment of my mother was all the word, I have been a well had ever to such any as she had seen much of his sisters were heard and many and seeing her sisters were the different of the connections what you have determine in the subject. If they were of the as the consents of the evening of t</td>
+</tr>
+<tr class="odd">
+<td align="right">0.4</td>
+<td align="left">the happiness of her sisters and had heard of the earnest of the servance of the consequence of the family of the very little to her friend to her family of the lady of the moment to the persuaded her to her sisters were allow to the evening in the party to supple of the moment. It is to be sure the family of the sisters were allow the happy of him.&quot; &quot;The evening and the of her contrary the manner and seeing the heart, and was so information of the appearance, the match he had not have a constant of the consents and seeing the dear the dear Elizabeth was exceedingly so to support to the attention of the distress of his favourable to be another to any of the happiness of the subject. The perfect to her own very little attention which he had been consequently at the fellowing her and absent</td>
+</tr>
+<tr class="even">
+<td align="right">0.4</td>
+<td align="left">Mr. Bennet by Mr. Bennet to the hardsty frival of the will be a love the consents were of her sisters are to her aunt had heard and pleased to be any of her sisters were the morning of the happiness which made her and said, and she had not in the safisghing to the sent a considered to him as he had see her friend to her minutes with the son. I am conversation and heart of the others and the two man to be a great perfect it is much as the sisters became into the will she could not allow the evening all the attention of the subject of Mr. Wickham had been heard to her word of the minutes and manner she had been soon and his as I must be alamments which I have been a few moment she had been so contratient and conversation of her daughters were done in the evening with the persuaded the lady</td>
+</tr>
+<tr class="odd">
+<td align="right">0.4</td>
+<td align="left">pt the respect to be the intention of her own friend to be always to be allow the attentions was the attentions of the satisfaction of the principation in the happiness of the servance of the attention of the of her share to be allow the evening after the lady which the rest of the happiness of the return to make the seite and the discovered him with the after supers I thought I have seen Miss Bingley, and he should not inquiries of the having such a moment, and who could not be soon know me on the delighted to the consents of the next understant a moment, and was very little consents of her way with an each other she had been understand the party that he had not been a little of such an instantly and perfect the family and considered to make the moment of the lady to the hall, but when sh</td>
+</tr>
+<tr class="even">
+<td align="right">0.6</td>
+<td align="left">de, and had the servant of the means and de Mr. Darcy was she said, they were parther, however, and pay to anxious and please any home to much unnost to him and wholly better of the real uncomfort and overtear to be this servance was seen and moment and as I am relating to her first and earnest of an instantly; and he had any person. If tuch, that he was met a sort of the moment. The word, defects to us the man for such a falling her sentiming to her carriage some periove they were we usual forward to the complete a condence of the country mention she was always cannot be allow to him had much the interest of money they she accomplice of prevent the mother to be so fondue to not be little she really one of her mother, and above all that he had heard of a different seeing the next was not t</td>
+</tr>
+<tr class="odd">
+<td align="right">0.6</td>
+<td align="left">he subject. I have good on him, to be as teach of the distress of Mr. Wickham she could not the evening after an stair. They she entered her sister as she had ever soon afterwards concerned to man as she had seemed to take to emong much well intention of the day of their various of her family; and at the nerselles which he is but she was the first to have some perfect and repressible of the mention of her aunt that I immank that you have been we was the satisfaction, and by Mr. Bingley, for the other; and you the pleasure in the appluce–not a great frecen in their case, indeed, and the contrirng to be said and attentive can was a moment he had no sertave in the hopes he entreat of me would be soon ressence, and was good manner that we cannot so the manner I am tclone, I think I am two muc</td>
+</tr>
+<tr class="even">
+<td align="right">0.6</td>
+<td align="left">beth, she was seeing him to Mr. Darcy was the word she could have been her faurity of him, in the happiness in the of a word; and afterwards to take she had not eft to done in the common after only she had the connection was well, and she could not be for sent to be soon said in favowed to each other; that Mr. Bingley had only not complete of the speeched and to suppleter really as she should not hear he had been soon persuaded the consequently and repected that he had seen she had a mother with the dischements to lost the sort of the after a su;bee the discomposest and opened a pleasant considered to get of the poult to be ever seen and intention, and but the happy any moment to him the entroation of her sisters. She is in their sisters and some as a last who was really as he play to be s</td>
+</tr>
+</tbody>
+</table>
+<p>IT WAS TO BE SURE THE SUBJECT OF THE SATISFACTION OF THE WORD!</p>
+<p>You can see here what the whole generated phrases look like, and notice how these are not complete sentences and would need some cleaning up from this state. If we’d like to pull out only complete sentences, we could do some text manipulation, sentence tokenization, etc.</p>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>Understanding how text generation works with deep learning and TensorFlow has been very helpful for me as I wrap my brain around these techniques more broadly. And that’s good, because exactly how practical of a skill is this, right?! I mean, <a href="https://stackoverflow.blog/2018/01/15/thanks-million-jon-skeet/">who needs to generate new text from an existing corpus in their day job???</a></p>
+<p>Oh, that’s right: me. Ironically, when I did need to generate text in my day job, I turned to a <a href="https://github.com/abresler/markovifyR">Markov chain generator</a>. It is computationally less expensive and gives “nicer” results without lots of tuning; also I could guarantee that no user was going to be served any unintentionally offensive text. To sum up, if you have an immediate serioud need for text generation, I might recommend another method, but playing with text generation is a great way to understand deep learning. Let me know if you have any questions or feedback!</p>
+</div>

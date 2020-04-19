@@ -1,0 +1,109 @@
+---
+title: "Reordering and facetting for ggplot2"
+date: 2019-07-01
+slug: "reorder-within"
+tags: [rstats]
+---
+
+
+
+<p><img src="/figs/2019-07-01-reorder-within/drake_reorder.png" /></p>
+<p>I recently wrote about the release of <a href="https://juliasilge.com/blog/sentiment-lexicons/">tidytext 0.2.1</a>, and one of the most useful new features in this release is a couple of helper functions for making plots with ggplot2. These helper functions address a class of challenges that often arises when dealing with text data, so we’ve included them in the tidytext package.</p>
+<div id="lets-work-through-an-example" class="section level2">
+<h2>Let’s work through an example</h2>
+<p>To show how to use these new functions, let’s walk through a more general example that does not deal with results that come from unstructured, free text. These helper functions are very often helpful in text analysis, but that’s not the only time I find myself reaching for them.</p>
+<p>For this example, let’s use the <a href="https://github.com/hadley/babynames">babynames</a> dataset of names given to children in the US, and find which names were most common in the 1950s, 1960s, 1970s, and 1980s.</p>
+<pre class="r"><code>library(tidyverse)
+library(babynames)
+
+top_names &lt;- babynames %&gt;%
+    filter(year &gt;= 1950,
+           year &lt; 1990) %&gt;%
+    mutate(decade = (year %/% 10) * 10) %&gt;%
+    group_by(decade) %&gt;%
+    count(name, wt = n, sort = TRUE) %&gt;%
+    ungroup
+
+top_names</code></pre>
+<pre><code>## # A tibble: 100,527 x 3
+##    decade name         n
+##     &lt;dbl&gt; &lt;chr&gt;    &lt;int&gt;
+##  1   1950 James   846042
+##  2   1950 Michael 839459
+##  3   1960 Michael 836934
+##  4   1950 Robert  832336
+##  5   1950 John    799658
+##  6   1950 David   771242
+##  7   1960 David   736583
+##  8   1960 John    716284
+##  9   1970 Michael 712722
+## 10   1960 James   687905
+## # … with 100,517 more rows</code></pre>
+<p>Notice that we can already tell that some of the top names in these adjacent decades are the same (Michael, John, David) but are in different orders. Let’s try to make a plot looking at these top names. What does the plot look like if we don’t try to order the names at all?</p>
+<pre class="r"><code>top_names %&gt;%
+    group_by(decade) %&gt;%
+    top_n(15) %&gt;%
+    ungroup %&gt;%
+    mutate(decade = as.factor(decade)) %&gt;%
+    ggplot(aes(name, n, fill = decade)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~decade, scales = &quot;free_y&quot;) +
+    coord_flip() +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(y = &quot;Number of babies per decade&quot;,
+         x = NULL,
+         title = &quot;What were the most common baby names in each decade?&quot;,
+         subtitle = &quot;Via US Social Security Administration&quot;)</code></pre>
+<p><img src="/blog/2019/2019-07-01-reorder-within_files/figure-html/unnamed-chunk-2-1.png" width="1440" /></p>
+<p>Here, ggplot2 puts the names in alphabetical order, because they are of type character. This is… not so useful or pleasing, I think most people would agree. 😩 What if <strong>instead</strong> we order the names by <code>n</code>, the number of babies per decade?</p>
+<pre class="r"><code>top_names %&gt;%
+    group_by(decade) %&gt;%
+    top_n(15) %&gt;%
+    ungroup %&gt;%
+    mutate(decade = as.factor(decade),
+           name = fct_reorder(name, n)) %&gt;%
+    ggplot(aes(name, n, fill = decade)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~decade, scales = &quot;free_y&quot;) +
+    coord_flip() +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(y = &quot;Number of babies per decade&quot;,
+         x = NULL,
+         title = &quot;What were the most common baby names in each decade?&quot;,
+         subtitle = &quot;Via US Social Security Administration&quot;)</code></pre>
+<p><img src="/blog/2019/2019-07-01-reorder-within_files/figure-html/unnamed-chunk-3-1.png" width="1440" /></p>
+<p>Well, this <strong>sort of</strong> worked. 😐 <strong>Mostly</strong> worked, one might say. What <code>fct_reorder()</code> and the similar <code>reorder()</code> function from base R do is to reorder all of these together, not reorder these names individually within some category and keep track of that.</p>
+</div>
+<div id="enter-reorder_within" class="section level2">
+<h2>Enter <code>reorder_within()</code></h2>
+<p>Back in 2016, Tyler Rinker <a href="https://trinkerrstuff.wordpress.com/2016/12/23/ordering-categories-within-ggplot2-facets/">put together a solution for this problem</a>, and David Robinson has had this wrapped up in <a href="https://github.com/dgrtwo/drlib/blob/master/R/reorder_within.R">some functions</a> in his personal R package for a while now. Thanks to a <a href="https://github.com/juliasilge/tidytext/pull/110">PR from Tim Mastny</a>, this functionality is now available in tidytext, as of version 0.2.1.</p>
+<p>How does it work? We need to add <em>two</em> new functions.</p>
+<pre class="r"><code>library(tidytext)
+
+top_names %&gt;%
+    group_by(decade) %&gt;%
+    top_n(15) %&gt;%
+    ungroup %&gt;%
+    mutate(decade = as.factor(decade),
+           name = reorder_within(name, n, decade)) %&gt;%
+    ggplot(aes(name, n, fill = decade)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~decade, scales = &quot;free_y&quot;) +
+    coord_flip() +
+    scale_x_reordered() +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(y = &quot;Number of babies per decade&quot;,
+         x = NULL,
+         title = &quot;What were the most common baby names in each decade?&quot;,
+         subtitle = &quot;Via US Social Security Administration&quot;)</code></pre>
+<p><img src="/blog/2019/2019-07-01-reorder-within_files/figure-html/unnamed-chunk-4-1.png" width="1440" /></p>
+<p>Aaaaaaah, much better! 😎 Notice that first, we used <code>reorder_within()</code> with three arguments:</p>
+<ul>
+<li>the item we want to reorder</li>
+<li>what we want to reorder by</li>
+<li>the groups or categories we want to reorder within</li>
+</ul>
+<p>Then we used <code>scale_x_reordered()</code> to finish up making this plot. This <code>scale()</code> function can take all the usual arguments you might want to pass along to such a thing in ggplot2, like <code>expand</code> or anything like that.</p>
+<p>I use this approach whenever I have counts, <a href="https://www.tidytextmining.com/tfidf.html">tf-idf</a>, or another quantity I want to plot across facets when there are overlapping values but I want each facet to display in rank order. I’m glad that these helper functions are now easily available in a package on CRAN, because I have found them quite helpful in my own day-to-day work.</p>
+<p>It was interesting work to get this into tidytext and supported there, as it is the first function for plotting we have included. I got to learn about <a href="https://github.com/juliasilge/tidytext/blob/master/tests/testthat/test-reorder-within.R">building some tests</a> for ggplot2 objects, including how to test actual plots using <a href="https://github.com/r-lib/vdiffr">vdiffr</a>. I hope the results of that work are useful to lots of folks!</p>
+</div>

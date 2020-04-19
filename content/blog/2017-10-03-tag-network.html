@@ -1,0 +1,35 @@
+---
+title: "Mapping ecosystems of software development"
+date: 2017-10-03
+slug: "tag-network"
+tags: [rstats]
+---
+
+
+
+<p>I have a <a href="https://stackoverflow.blog/2017/10/03/mapping-ecosystems-software-development/">new post on the Stack Overflow blog</a> today about the complex, interrelated ecosystems of software development. On the data team at Stack Overflow, we spend a lot of time and energy thinking about tech ecosystems and how technologies are related to each other. One way to get at this idea of relationships between technologies is <strong>tag correlations</strong>, how often technology tags at Stack Overflow appear together relative to how often they appear separately. One place we see developers using tags at Stack Overflow is on their <a href="https://stackoverflow.com/users/story/join">Developer Stories</a>. If we are interested in how technologies are connected and how they are used together, developers’ own descriptions of their work and careers is a great place to get that.</p>
+<div class="figure">
+<img src="/figs/2017-10-03-tag-network/interactive_viz.gif" />
+
+</div>
+<p>I released the data for this network structure as a <a href="https://www.kaggle.com/stackoverflow/stack-overflow-tag-network/">dataset on Kaggle</a> so you can explore it for yourself! For example, the post for Stack Overflow includes an interactive visualization created using the <a href="https://christophergandrud.github.io/networkD3/">networkD3</a> package but we can create other kinds of visualizations using the <a href="https://github.com/thomasp85/ggraph">ggraph</a> package. Either way, trusty <a href="http://igraph.org/r/">igraph</a> comes into play.</p>
+<pre class="r"><code>library(readr)
+library(igraph)
+library(ggraph)
+
+stack_network &lt;- graph_from_data_frame(read_csv(&quot;stack_network_links.csv&quot;),
+                                       vertices = read_csv(&quot;stack_network_nodes.csv&quot;))
+
+set.seed(2017)
+ggraph(stack_network, layout = &quot;fr&quot;) +
+    geom_edge_link(alpha = 0.2, aes(width = value)) +
+    geom_node_point(aes(color = as.factor(group), size = 10 * nodesize)) +
+    geom_node_text(aes(label = name), family = &quot;RobotoCondensed-Regular&quot;,
+                   repel = TRUE) +
+    theme_graph(base_family = &quot;RobotoCondensed-Regular&quot;) +
+    theme(plot.title = element_text(family=&quot;Roboto-Bold&quot;),
+          legend.position=&quot;none&quot;) +
+    labs(title = &quot;Stack Overflow Tag Network&quot;,
+         subtitle = &quot;Tags correlated on Developer Stories&quot;)</code></pre>
+<p><img src="/blog/2017/2017-10-03-tag-network_files/figure-html/unnamed-chunk-1-1.png" width="1800" /></p>
+<p>We have explored these kinds of network structures using all kinds of data sources at Stack Overflow, from Q&amp;A to traffic, and although we see similar relationships across all of them, we really like Developer Stories as a data source for this particular question. Let me know if you have any comments or questions!</p>

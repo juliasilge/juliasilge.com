@@ -1,0 +1,25 @@
+---
+title: "Understanding gender roles in movies with text mining"
+date: 2017-08-22
+slug: "women-in-film"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180)
+options(width=80, dplyr.width = 150)
+```
+
+![](/figs/2017-08-22-women-in-film/slider.gif)
+
+I have a new [visual essay up at The Pudding](https://pudding.cool/2017/08/screen-direction/) today, using text mining to explore how women are portrayed in film.
+
+![](/figs/2017-08-22-women-in-film/og-img.png)
+
+The R code behind this analysis in [publicly available on GitHub](https://github.com/juliasilge/women-in-film).
+
+![](/figs/2017-08-22-women-in-film/wall.gif)
+
+I was so glad to work with the talented [Russell Goldenberg](https://twitter.com/codenberg) and [Amber Thomas](https://twitter.com/proquesasker) on this project, and many thanks to [Matt Daniels](https://twitter.com/matthew_daniels) for inviting me to contribute to [The Pudding](https://pudding.cool/). I've been a big fan of their work for a long time!

@@ -1,0 +1,122 @@
+---
+title: "Hyperparameter tuning and #TidyTuesday food consumption"
+date: 2020-02-18
+slug: "food-hyperparameter-tune"
+tags: [rstats,tidymodels]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+Last week I published [a screencast](https://juliasilge.com/blog/hotels-recipes/) demonstrating how to use the tidymodels framework and specifically the recipes package. Today, I'm using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on food consumption around the world to show hyperparameter tuning!
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "muf3-hrahHs")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal here is to predict which countries are Asian countries and which countries are not, based on their patterns of food consumption in the eleven categories from the [#TidyTuesday dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-02-18/readme.md). The original data is in a long, tidy format, and includes information on the carbon emission associated with each category of food consumption.
+
+```{r food_consumption}
+library(tidyverse)
+
+food_consumption <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-02-18/food_consumption.csv')
+
+food_consumption
+```
+
+Let's build a dataset for modeling that is wide instead of long using `pivot_wider()` from tidyr. We can use the [countrycode](https://github.com/vincentarelbundock/countrycode) package to find which continent each country is in, and create a new variable for prediction `asia` that tells us whether a country is in Asia or not.
+
+```{r food, dependson="food_consumption"}
+library(countrycode)
+library(janitor)
+
+food <- food_consumption %>%
+    select(-co2_emmission) %>%
+    pivot_wider(names_from = food_category,
+                values_from = consumption) %>%
+    clean_names() %>%
+    mutate(continent = countrycode(
+        country, 
+        origin = "country.name",
+        destination = "continent"
+    )) %>%
+    mutate(asia = case_when(continent == "Asia" ~ "Asia",
+                            TRUE ~ "Other")) %>%
+    select(-country, -continent) %>%
+    mutate_if(is.character, factor)
+
+food
+```
+
+This is not a big dataset, but it will be good for demonstrating how to tune hyperparameters. Before we get started on that, how are the categories of food consumption related? Since these are all numeric variables, we can use `ggscatmat()` for a quick visualization.
+
+```{r scatmat, dependson="food", fig.width=10, fig.height=10}
+library(GGally)
+ggscatmat(food, columns = 1:11, color = "asia", alpha = 0.7)
+```
+
+Notice how important rice is! Also see how the relationships between different food categories is different for Asian and non-Asian countries; a tree-based model like a random forest is good as learning interactions like this.
+
+## Tune hyperparameters
+
+Now it's time to tune the hyperparameters for a random forest model. First, let's create a set of bootstrap resamples to use for tuning, and then let's create a model specification for a random forest where we will tune `mtry` (the number of predictors to sample at each split) and `min_n` (the number of observations needed to keep splitting nodes). There are **hyperparameters** that can't be learned from data when training the model.
+
+```{r}
+library(tidymodels)
+
+set.seed(1234)
+food_boot <- bootstraps(food, times = 30)
+food_boot
+
+rf_spec <- rand_forest(mode = "classification",
+                       mtry = tune(),
+                       trees = 1000,
+                       min_n = tune()) %>%
+    set_engine("ranger")
+
+rf_spec
+```
+
+We can't learn the right values when training a single model, but we can train a whole bunch of models and see which ones turn out best. We can use parallel processing to make this go faster, since the different parts of the grid are independent. 
+
+```{r}
+doParallel::registerDoParallel()
+
+rf_grid <- tune_grid(
+    asia ~ .,
+    model = rf_spec,
+    resamples = food_boot
+)
+
+rf_grid
+```
+
+Once we have our tuning results, we can check them out.
+
+```{r}
+rf_grid %>%
+    collect_metrics
+```
+
+And we can see which models performed the best, in terms of some given metric.
+
+```{r}
+rf_grid %>%
+    show_best("roc_auc")
+```
+
+If you would like to specific the grid for tuning yourself, check out the [dials](https://tidymodels.github.io/dials/) package!

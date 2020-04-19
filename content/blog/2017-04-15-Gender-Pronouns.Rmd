@@ -1,0 +1,217 @@
+---
+title: "Gender Roles with Text Mining and N-grams"
+slug: "Gender-Pronouns"
+date: 2017-04-15
+excerpt: "Tidy data principles and 19th century novels"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180)
+options(width=80, dplyr.width = 150)
+library(ggplot2)
+library(silgelib)
+library(scales)
+theme_set(theme_roboto())
+```
+
+
+Today is the one year anniversary of the [janeaustenr](https://cran.r-project.org/package=janeaustenr) package's appearance on CRAN, its [cranniversary](https://twitter.com/dataandme/status/847904785890250754), if you will. I think it's time for more Jane Austen here on my blog.
+
+<iframe src="https://giphy.com/embed/W4DAivVgfYCeQ" width="480" height="270.72" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/jane-austen-W4DAivVgfYCeQ">via GIPHY</a></p>
+
+I saw [this paper](http://culturalanalytics.org/2016/12/understanding-gender-and-character-agency-in-the-19th-century-novel/) by Matthew Jockers and Gabi Kirilloff a number of months ago and the ideas in it have been knocking around in my head ever since. The authors of that paper used text mining to examine a corpus of 19th century novels and explore how gendered pronouns (he/she/him/her) are associated with different verbs. These authors used the Stanford CoreNLP library to parse dependencies in sentences and find which verbs are connected to which pronouns; I have been thinking about how to apply a different approach to this question using tidy data principles and n-grams. Let's see what we can do!
+
+## Jane Austen and n-grams
+
+An n-gram is a contiguous series of $n$ words from a text; for example, a bigram is a pair of words, with $n = 2$. If we want to find out which verbs an author is more likely to pair with the pronoun "she" than with "he", we can analyze bigrams. Let's use `unnest_tokens` from the tidytext package to identify all the bigrams in the 6 completed, published novels of Jane Austen and [transform this to a tidy dataset](http://tidytextmining.com/tidytext.html).
+
+```{r austen_bigrams, message=FALSE}
+library(tidyverse)
+library(tidytext)
+library(janeaustenr)
+
+austen_bigrams <- austen_books() %>%
+    unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+austen_bigrams
+```
+
+That is all the bigrams from Jane Austen's works, but we only want the ones that start with "he" or "she". Jane Austen wrote in the third person, so this is a good example set of texts for this question. The original paper used dependency parsing of sentences and included other pronouns like "her" and "him", but let's just look for bigrams that start with "she" and "he". We will get some adverbs and modifiers and such as the second word in the bigram, but mostly verbs, the main thing we are interested in.
+
+```{r bigram_counts, dependson="austen_bigrams"}
+pronouns <- c("he", "she")
+
+bigram_counts <- austen_bigrams %>%
+    count(bigram, sort = TRUE) %>%
+    separate(bigram, c("word1", "word2"), sep = " ") %>%
+    filter(word1 %in% pronouns) %>%
+    count(word1, word2, wt = n, sort = TRUE) %>%
+    rename(total = nn)
+
+bigram_counts
+```
+
+There we go! These are the most common bigrams that start with "he" and "she" in Jane Austen's works. Notice that there are more mentions of women than men here; this makes sense as Jane Austen's novels have protagonists who are women. The most common bigrams look pretty similar between the male and female characters in Austen's works. Let's calculate a log odds ratio so we can find the words (hopefully mostly verbs) that exhibit the biggest differences between relative use for "she" and "he".
+
+```{r word_ratios, dependson="bigram_counts"}
+word_ratios <- bigram_counts %>%
+    group_by(word2) %>%
+    filter(sum(total) > 10) %>%
+    ungroup() %>%
+    spread(word1, total, fill = 0) %>%
+    mutate_if(is.numeric, funs((. + 1) / sum(. + 1))) %>%
+    mutate(logratio = log2(she / he)) %>%
+    arrange(desc(logratio))    
+```
+
+Which words have about the same likelihood of following "he" or "she" in Jane Austen's novels?
+
+```{r dependson="word_ratios"}
+word_ratios %>% 
+    arrange(abs(logratio))
+```
+
+These words, like "always" and "loves", are about as likely to come after the word "she" as the word "he". Now let's look at the words that exhibit the largest differences in appearing after "she" compared to "he".
+
+```{r austen, dependson="word_ratios", fig.width=7, fig.height=6}
+word_ratios %>%
+    mutate(abslogratio = abs(logratio)) %>%
+    group_by(logratio < 0) %>%
+    top_n(15, abslogratio) %>%
+    ungroup() %>%
+    mutate(word = reorder(word2, logratio)) %>%
+    ggplot(aes(word, logratio, color = logratio < 0)) +
+    geom_segment(aes(x = word, xend = word,
+                     y = 0, yend = logratio), 
+                 size = 1.1, alpha = 0.6) +
+    geom_point(size = 3.5) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "Relative appearance after 'she' compared to 'he'",
+         title = "Words paired with 'he' and 'she' in Jane Austen's novels",
+         subtitle = "Women remember, read, and feel while men stop, take, and reply") +
+    scale_color_discrete(name = "", labels = c("More 'she'", "More 'he'")) +
+    scale_y_continuous(breaks = seq(-3, 3),
+                       labels = c("0.125x", "0.25x", "0.5x", 
+                                  "Same", "2x", "4x", "8x"))
+```
+
+These words are the ones that are the most different in how Jane Austen used them with the pronouns "he" and "she". Women in Austen's novels do things like remember, read, feel, resolve, long, hear, dare, and cry. Men, on the other hand, in these novels do things like stop, take, reply, come, marry, and know. Women in Austen's world can be funny and smart and unconventional, but she plays with these ideas within a cultural context where they act out gendered roles.
+
+## George Eliot and n-grams
+
+Let's look at another set of novels to see some similarities and differences. Let's take some novels of George Eliot, another English writer (a woman) who lived and wrote several decades after Jane Austen. Let's take [*Middlemarch*](https://www.gutenberg.org/ebooks/145) (MY FAVE), [*Silas Marner*](https://www.gutenberg.org/ebooks/550), and [*The Mill on the Floss*](https://www.gutenberg.org/ebooks/6688).
+
+
+```{r download}
+library(gutenbergr)
+
+eliot <- gutenberg_download(c(145, 550, 6688),
+                            mirror = "http://mirrors.xmission.com/gutenberg/")
+```
+
+We now have the texts downloaded from Project Gutenberg. We can use the same approach as above and calculate the log odds ratios for each word that comes after "he" and "she" in these novels of George Eliot.
+
+```{r eliot_ratios, dependson="download"}
+eliot_ratios <- eliot %>%
+    unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+    count(bigram, sort = TRUE) %>%
+    ungroup() %>%
+    separate(bigram, c("word1", "word2"), sep = " ") %>%
+    filter(word1 %in% pronouns) %>%
+    count(word1, word2, wt = n, sort = TRUE) %>%
+    rename(total = nn) %>%
+    group_by(word2) %>%
+    filter(sum(total) > 10) %>%
+    ungroup() %>%
+    spread(word1, total, fill = 0) %>%
+    mutate_if(is.numeric, funs((. + 1) / sum(. + 1))) %>%
+    mutate(logratio = log2(she / he)) %>%
+    arrange(desc(logratio))
+```
+
+What words exhibit the largest differences in their appearance after these pronouns in George Eliot's works?
+
+```{r eliot, dependson="eliot_ratios", fig.width=7, fig.height=6}
+eliot_ratios %>%
+    mutate(abslogratio = abs(logratio)) %>%
+    group_by(logratio < 0) %>%
+    top_n(15, abslogratio) %>%
+    ungroup() %>%
+    mutate(word = reorder(word2, logratio)) %>%
+    ggplot(aes(word, logratio, color = logratio < 0)) +
+    geom_segment(aes(x = word, xend = word,
+                     y = 0, yend = logratio), 
+                 size = 1.1, alpha = 0.6) +
+    geom_point(size = 3.5) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "Relative appearance after 'she' compared to 'he'",
+         title = "Words paired with 'he' and 'she' in George Eliot's novels",
+         subtitle = "Women read, run, and need while men leave, mean, and tell") +
+    scale_color_discrete(name = "", labels = c("More 'she'", "More 'he'")) +
+    scale_y_continuous(breaks = seq(-5, 5),
+                       labels = c("0.03125x", "0.0625x", "0.125x", "0.25x", "0.5x", 
+                                  "Same", "2x", "4x", "8x", "16x", "32x"))
+```
+
+We can see some difference in word use and style here, but overall there are quite similar ideas behind the verbs for women and men in Eliot's works as Austen's. Women read, run, need, marry, and look while men leave, mean, tell, know, and call. The verbs associated with women are more connected to emotion or feelings while the verbs associated with men are more connected to action or speaking.
+
+## Jane Eyre and n-grams
+
+Finally, let's look at one more novel. The original paper found that [*Jane Eyre* by Charlotte Brontë](https://www.gutenberg.org/ebooks/1260) had its verbs switched, in that there were lots of active, non-feelings verbs associated with feminine pronouns. That Jane Eyre!
+
+```{r eyre_ratios}
+eyre <- gutenberg_download(1260,
+                           mirror = "http://mirrors.xmission.com/gutenberg/")
+
+eyre_ratios <- eyre %>%
+    unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+    count(bigram, sort = TRUE) %>%
+    ungroup() %>%
+    separate(bigram, c("word1", "word2"), sep = " ") %>%
+    filter(word1 %in% pronouns) %>%
+    count(word1, word2, wt = n, sort = TRUE) %>%
+    rename(total = nn) %>%
+    group_by(word2) %>%
+    filter(sum(total) > 5) %>%
+    ungroup() %>%
+    spread(word1, total, fill = 0) %>%
+    mutate_if(is.numeric, funs((. + 1) / sum(. + 1))) %>%
+    mutate(logratio = log2(she / he)) %>%
+    arrange(desc(logratio))
+```
+
+What words exhibit the largest differences in *Jane Eyre*?
+
+```{r eyre, dependson="eliot_ratios", fig.width=7, fig.height=6}
+eyre_ratios %>%
+    mutate(abslogratio = abs(logratio)) %>%
+    group_by(logratio < 0) %>%
+    top_n(15, abslogratio) %>%
+    ungroup() %>%
+    mutate(word = reorder(word2, logratio)) %>%
+    ggplot(aes(word, logratio, color = logratio < 0)) +
+    geom_segment(aes(x = word, xend = word,
+                     y = 0, yend = logratio), 
+                 size = 1.1, alpha = 0.6) +
+    geom_point(size = 3.5) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "Relative appearance after 'she' compared to 'he'",
+         title = "Words paired with 'he' and 'she' in Jane Eyre",
+         subtitle = "Women look, tell, and open while men stop, smile, and pause") +
+    scale_color_discrete(name = "", labels = c("More 'she'", "More 'he'")) +
+    scale_y_continuous(breaks = seq(-3, 3),
+                       labels = c("0.125x", "0.25x", "0.5x", 
+                                  "Same", "2x", "4x", "8x"))
+```
+
+Indeed, the words that are more likely to appear after "she" are not particularly feelings-oriented; women in this novel do things like look, tell, open, and do. Men in *Jane Eyre* do things like stop, smile, pause, pursue, and stand.
+
+## The End
+
+It is so interesting to me how these various authors understand and portray their characters' roles and gender, and how we can see that through analyzing word choices. The R Markdown file used to make this blog post is available [here](https://github.com/juliasilge/juliasilge.github.io/blob/master/_R/2017-04-15-Gender-Pronouns.Rmd). I am very happy to hear about that or other feedback and questions!

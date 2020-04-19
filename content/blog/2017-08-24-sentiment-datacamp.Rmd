@@ -1,0 +1,33 @@
+---
+title: "Sentiment analysis using tidy data principles at DataCamp"
+date: 2017-08-24
+slug: "sentiment-datacamp"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180)
+options(width=80, dplyr.width = 150)
+```
+
+## NOTE: Read [more here](https://juliasilge.com/blog/datacamp-misconduct/) about why I no longer recommend taking my courses at DataCamp.
+
+I've been developing a course at [DataCamp](https://www.datacamp.com/) over the past several months, and I am happy to announce that it is now launched!
+
+![](/figs/2017-08-24-sentiment-datacamp/screenshot.png)
+
+The course is [Sentiment Analysis in R: the Tidy Way](https://www.datacamp.com/courses/sentiment-analysis-in-r-the-tidy-way) and I am excited that it is now available for you to explore and learn from. This course focuses on digging into the emotional and opinion content of text using sentiment analysis, and it does this from the specific perspective of using tools built for handling tidy data. The course is organized into four case studies (one per chapter), and I don't think it's too much of a spoiler to say that I wear a costume for part of it. I'm just saying you should probably check out the course trailer.
+
+## Course description
+
+Text datasets are diverse and ubiquitous, and sentiment analysis provides an approach to understand the attitudes and opinions expressed in these texts. In this course, you will develop your text mining skills using tidy data principles. You will apply these skills by performing sentiment analysis in four case studies, on text data from Twitter to TV news to Shakespeare. These case studies will allow you to practice important data handling skills, learn about the ways sentiment analysis can be applied, and extract relevant insights from real-world data.
+
+## Learning objectives
+
+- Learn the principles of sentiment analysis from a tidy data perspective
+- Practice manipulating and visualizing text data using dplyr and ggplot2
+- Apply sentiment analysis skills to several real-world text datasets
+
+[Check the course out](https://www.datacamp.com/courses/sentiment-analysis-in-r-the-tidy-way), have fun, and start practicing those text mining skills!

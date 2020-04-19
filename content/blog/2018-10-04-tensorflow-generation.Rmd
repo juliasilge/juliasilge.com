@@ -1,0 +1,270 @@
+---
+title: "TensorFlow, Jane Austen, and Text Generation"
+date: 2018-10-04
+slug: "tensorflow-generation"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE)
+options(width=120, dplyr.width = 150)
+library(ggplot2)
+library(scales)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+I remember the first time I saw a deep learning text generation project that was truly compelling and delightful to me. It was in 2016 when [Andy Herd generated new *Friends* scenes](https://twitter.com/_Pandy/status/689209034143084547) by training a recurrent neural network on all the show's episodes. Herd's work went pretty viral at the time and I thought:
+
+<iframe src="https://giphy.com/embed/3oEjHTazrdiQeYaR68" width="480" height="336" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/inpulsedm-3oEjHTazrdiQeYaR68">via GIPHY</a></p>
+
+And also:
+
+<iframe src="https://giphy.com/embed/CDoxe35inxhfO" width="480" height="330" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/CDoxe35inxhfO">via GIPHY</a></p>
+
+At the time I dabbled a bit with [Andrej Karpathy's tutorials](http://karpathy.github.io/2015/05/21/rnn-effectiveness/) for character-level RNNs; his work and tutorials undergird a lot of the kind of STUNT TEXT GENERATION work we see in the world. Python is not my strongest language, though, and I did not ever have a real motivation to understand the math of what was going on. I watched the masters like [Janelle Shane](https://twitter.com/JanelleCShane) instead.
+
+[TensorFlow for R](https://tensorflow.rstudio.com/) has changed that for me. Not only is the R interface that RStudio has developed just *beautiful*, but now these fun text generation projects provide a step into understanding how these neural networks model work at all, and deal with text in particular. Let's step through how to take the text of *Pride and Prejudice* and generate `r emo::ji("raised_hands")` new `r emo::ji("raised_hands")` Jane-Austen-esque text.
+
+This code borrows heavily from a couple of excellent sources.
+
+- [Jonathan Nolis' project on offensive license plates](https://github.com/jnolis/banned-license-plates) (That link is for their code; you can read a [great narrative explanation as well](https://towardsdatascience.com/using-deep-learning-to-generate-offensive-license-plates-619b163ed937).)
+- [RStudio's example code for text generation](https://keras.rstudio.com/articles/examples/lstm_text_generation.html)
+
+Before starting, you will need to install keras so be sure to check out [details on installation](https://keras.rstudio.com/reference/install_keras.html). 
+
+## Tokenize
+
+We are going to train a character-level language model, which means the model will take a single character and then predict what character should come next, based on the ones that have come before. First step? We need to take *Pride and Prejudice* and divide it up into individual characters. 
+
+<iframe src="https://giphy.com/embed/l4JyY6IdblsismaeA" width="480" height="297" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/bbc-drama-pride-and-prejudice-l4JyY6IdblsismaeA">via GIPHY</a></p>
+
+The code below *keeps* both capital and lowercase letters, and builds a model that learns when to use which one. This is computationally more intensive than training a model that only learns about the letters themselves in lower case; if you want to start off with that kind of model, change to the default behavior for `tokenize_characters()` of `lowercase = TRUE`.
+
+
+```{r}
+library(keras)
+library(tidyverse)
+library(janeaustenr)
+library(tokenizers)
+
+max_length <- 40
+
+text <- austen_books() %>% 
+    filter(book == "Pride & Prejudice") %>%
+    pull(text) %>%
+    str_c(collapse = " ") %>%
+    tokenize_characters(lowercase = FALSE, strip_non_alphanum = FALSE, simplify = TRUE)
+
+print(sprintf("Corpus length: %d", length(text)))
+
+chars <- text %>%
+    unique() %>%
+    sort()
+
+print(sprintf("Total characters: %d", length(chars)))
+```
+
+A good start!
+
+## CHOP CHOP CHOP
+
+Next we want to cut the whole text into pieces: sequences of `max_length` characters. These will be the chunks of text that we use for training.
+
+```{r}
+dataset <- map(
+    seq(1, length(text) - max_length - 1, by = 3), 
+    ~list(sentence = text[.x:(.x + max_length - 1)], 
+          next_char = text[.x + max_length])
+)
+
+dataset <- transpose(dataset)
+```
+
+## Vectorize
+
+Now it's time to make a big set of vectors of these chunks of text. If you make `max_length` larger, this `vectors` object can get unwieldy in terms of memory.
+
+```{r}
+vectorize <- function(data, chars, max_length){
+    x <- array(0, dim = c(length(data$sentence), max_length, length(chars)))
+    y <- array(0, dim = c(length(data$sentence), length(chars)))
+    
+    for(i in 1:length(data$sentence)){
+        x[i,,] <- sapply(chars, function(x){
+            as.integer(x == data$sentence[[i]])
+        })
+        y[i,] <- as.integer(chars == data$next_char[[i]])
+    }
+    
+    list(y = y,
+         x = x)
+}
+
+vectors <- vectorize(dataset, chars, max_length)
+
+```
+
+
+## Model definition
+
+So far all we've been doing is chopping text into bits and rearranging data structures. Finally, it is time to delve into `r emo::ji("sparkle")` DEEP LEARNING `r emo::ji("sparkle")`. The first step is to create a model. I've used the same parameters as [the RStudio LSTM example](https://keras.rstudio.com/articles/examples/lstm_text_generation.html); this next step is fast as it is only defining the kind of model architecture we are going to use.
+
+```{r}
+create_model <- function(chars, max_length){
+    keras_model_sequential() %>%
+        layer_lstm(128, input_shape = c(max_length, length(chars))) %>%
+        layer_dense(length(chars)) %>%
+        layer_activation("softmax") %>% 
+        compile(
+            loss = "categorical_crossentropy", 
+            optimizer = optimizer_rmsprop(lr = 0.01)
+        )
+}
+```
+
+Let's also make a function that fits the model for a set number of epochs.
+
+```{r}
+fit_model <- function(model, vectors, epochs = 1){
+    model %>% fit(
+        vectors$x, vectors$y,
+        batch_size = 128,
+        epochs = epochs
+    )
+    NULL
+}
+```
+
+
+## Model training & results
+
+Now it's almost time to **train** the model on our data. Let's make some more functions.
+
+This one generates a phrase from a model, text, set of characters, and parameters like the maximum length of phrase and diversity, i.e. how WILD we are going to let the model be.
+
+```{r}
+generate_phrase <- function(model, text, chars, max_length, diversity){
+    
+    # this function chooses the next character for the phrase
+    choose_next_char <- function(preds, chars, temperature){
+        preds <- log(preds) / temperature
+        exp_preds <- exp(preds)
+        preds <- exp_preds / sum(exp(preds))
+        
+        next_index <- rmultinom(1, 1, preds) %>% 
+            as.integer() %>%
+            which.max()
+        chars[next_index]
+    }
+    
+    # this function takes a sequence of characters and turns it into a numeric array for the model
+    convert_sentence_to_data <- function(sentence, chars){
+        x <- sapply(chars, function(x){
+            as.integer(x == sentence)
+        })
+        array_reshape(x, c(1, dim(x)))
+    }
+    
+    # the inital sentence is from the text
+    start_index <- sample(1:(length(text) - max_length), size = 1)
+    sentence <- text[start_index:(start_index + max_length - 1)]
+    generated <- ""
+    
+    # while we still need characters for the phrase
+    for(i in 1:(max_length * 20)){
+        
+        sentence_data <- convert_sentence_to_data(sentence, chars)
+        
+        # get the predictions for each next character
+        preds <- predict(model, sentence_data)
+        
+        # choose the character
+        next_char <- choose_next_char(preds, chars, diversity)
+        
+        # add it to the text and continue
+        generated <- str_c(generated, next_char, collapse = "")
+        sentence <- c(sentence[-1], next_char)
+    }
+    
+    generated
+}
+```
+
+Notice that we seed the first characters for the model to use for prediction with a real chunk of text from *Pride and Prejudice*.
+
+This next function fits the model to the set of vectors, and then generates phrases from the current version of the model.
+
+```{r}
+iterate_model <- function(model, text, chars, max_length, 
+                          diversity, vectors, iterations){
+    for(iteration in 1:iterations){
+        
+        message(sprintf("iteration: %02d ---------------\n\n", iteration))
+        
+        fit_model(model, vectors)
+        
+        for(diversity in c(0.2, 0.5, 1)){
+            
+            message(sprintf("diversity: %f ---------------\n\n", diversity))
+            
+            current_phrase <- 1:10 %>% 
+                map_chr(function(x) generate_phrase(model,
+                                                    text,
+                                                    chars,
+                                                    max_length, 
+                                                    diversity))
+            
+            message(current_phrase, sep="\n")
+            message("\n\n")
+            
+        }
+    }
+    NULL
+}
+
+```
+
+I'm sorry to say that we haven't really done anything yet.
+
+<iframe src="https://giphy.com/embed/26FLdSILnEZTBFPjO" width="480" height="310" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/bbc-drama-pride-and-prejudice-26FLdSILnEZTBFPjO">via GIPHY</a></p>
+
+## Actually run the model
+
+But now! Now we are going to train the model.
+
+How many times should you iterate through the model? You want to the loss to stabilize (lower is better) but once the loss is at whatever low value we can achieve for the data we have and the model architecture we have chosen, iterating more and more isn't going to help anymore. For me with this data, about 40 iterations worked well.
+
+```{r}
+model <- create_model(chars, max_length)
+
+iterate_model(model, text, chars, max_length, diversity, vectors, 40)
+```
+
+Now let's see what we've got! Let's look at several values for `diversity`, the measure for how creative/wacky we let the model be in which character to choose next in a sequence. We'll try out values between 0.2 (less creative) and 0.6 (more creative).
+
+
+```{r}
+result <- data_frame(diversity = rep(c(0.2, 0.4, 0.6), 20)) %>%
+    mutate(phrase = map_chr(diversity,
+                            ~ generate_phrase(model, text, chars, max_length, .x))) %>%
+    arrange(diversity)
+
+result %>%
+    sample_n(10) %>%
+    arrange(diversity) %>%
+    kable()
+```
+
+IT WAS TO BE SURE THE SUBJECT OF THE SATISFACTION OF THE WORD!
+
+You can see here what the whole generated phrases look like, and notice how these are not complete sentences and would need some cleaning up from this state. If we'd like to pull out only complete sentences, we could do some text manipulation, sentence tokenization, etc.
+
+## Conclusion
+
+Understanding how text generation works with deep learning and TensorFlow has been very helpful for me as I wrap my brain around these techniques more broadly. And that's good, because exactly how practical of a skill is this, right?! I mean, [who needs to generate new text from an existing corpus in their day job???](https://stackoverflow.blog/2018/01/15/thanks-million-jon-skeet/) 
+
+Oh, that's right: me. Ironically, when I did need to generate text in my day job, I turned to a [Markov chain generator](https://github.com/abresler/markovifyR). It is computationally less expensive and gives "nicer" results without lots of tuning; also I could guarantee that no user was going to be served any unintentionally offensive text. To sum up, if you have an immediate serioud need for text generation, I might recommend another method, but playing with text generation is a great way to understand deep learning. Let me know if you have any questions or feedback!
+

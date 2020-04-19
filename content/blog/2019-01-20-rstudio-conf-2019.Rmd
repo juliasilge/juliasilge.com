@@ -1,0 +1,105 @@
+---
+title: "Feeling the rstudio::conf `r emo::ji('heart')`"
+date: 2019-01-20
+slug: "rstudio-conf-2019"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+library(ggplot2)
+library(silgelib)
+library(tidyverse)
+theme_set(theme_plex())
+```
+
+
+I am heading home from my third year of attending [rstudio::conf](https://www.rstudio.com/conference/)! If you weren't there, watch for the videos to be released so you can check out the talks; I know I will do the same so I can see the talks I was [forced to miss by scheduling constraints](https://twitter.com/malco_barrett/status/1084276428902780928). I love this conference, and once again this year, the organizers have succeeded in building an impactful, valuable, inclusive conference. The welcoming values of the conference were made explicit from the very first moments of the first session.
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1085918329825619968')
+```
+
+This was my first year not to speak at rstudio::conf, and I so enjoyed attending more talks, focusing on learning, and meeting so many people. The only "official" thing I did was faciliate a [Birds of a Feather session](https://twitter.com/Data_Sue_ATX/status/1085942474022047744) focused on text mining and natural language processing. Thanks to everyone who came to chat there!
+
+As I reflect more broadly on the conference, it's interesting to see themes emerge that multiple folks addressed across the days. For example, one theme that I remember from last year in 2018 was how broadly useful and impactful [simulations](https://www.rstudio.com/resources/videos/to-the-tidyverse-and-beyond/) can be. This year, I feel like there are three main themes I connected with.
+
+- Using R as a first-class programming language, often in production
+- Best practices for workflows
+- Professional competence beyond writing code
+
+## R is a real programming language
+
+On Thursday, we heard from RStudio president Tareef Kawaf about code, reproducibility, and RStudio's business model. He also talked about the two things that have made the most noticeable improvements in the quality of my own work life recently (both of which have been RStudio investments/efforts):
+
+- maturing the R/database interfaces
+- API capabilities for R
+
+These are examples of this first theme, treating R like a first-class programming language and thinking about how it can be used in production. CTO Joe Cheng gave a great talk specifically about Shiny in production.
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1085929641636880384')
+```
+
+Jacqueline Nolis and Heather Nolis gave another compelling and useful talk about R in production, telling their story about putting a deep learning model trained in R actually into production for T-Mobile using R.
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1085948953202438144')
+```
+
+Some other standout talks for me around this theme were James Blair talking about [Plumber APIs](https://twitter.com/Blair09M/status/1086310141031579648) and Jim Hester's talk about [package dependencies](https://twitter.com/jimhester_/status/1086317260963225600). (Check out that new package Jim introduces in that talk for measuring how/how much your own package depends on others! `r emo::ji("wow")`)
+
+## How do I do this again?!
+
+Another theme I saw was thinking explicitly about processes and **how** we work as data scientists and analysts. Probably my favorite in this category was Kara Woo's talk about her experience working as an intern on ggplot2 and how she solved a specific problem with how box plots rendered.
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1085958234618376192')
+```
+
+I also am looking forward to applying Amelia McNamara's talk about moving from brittle, fragile code to robust, safe code for [categorical data](https://twitter.com/AmeliaMN/status/1085961197994889216), as well as the whole afternoon session on machine learning and modeling with talks by Max Kuhn, [Alex Hayes](https://twitter.com/alexpghayes/status/1086020425598017538), and more.
+
+A different aspect of this theme of process and workflow is how we can make work public and share knowledge. My coauthor Dave's keynote about [sharing work publicly](http://bit.ly/drob-rstudio-2019) made the case for increasing the impact of work we do by broadening its audience.
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1086375355491983362')
+```
+
+
+## Code is only *part* of my job
+
+Friday morning started off with a keynote by [Felienne](http://www.felienne.com/) (who apparently is a one name person like Prince?!? after the talk I feel like it's fair), and RStudio is so lucky to have brought her to their conference. Her main point was about how we teach programming to people, but the talk was excellent at a higher level than even that. I have watched some videos of her before so I was expecting this to be good, but it was better than I was even hoping.
+
+<blockquote class="twitter-tweet" data-conversation="none" data-lang="en"><p lang="en" dir="ltr">Programming doesn&#39;t have a tradition of direct instruction, and we have... really weird ideas about what to say to learners. 😮 <a href="https://twitter.com/hashtag/rstudioconf?src=hash&amp;ref_src=twsrc%5Etfw">#rstudioconf</a> <a href="https://t.co/8MZwTykWjg">https://t.co/8MZwTykWjg</a></p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/1086286040216887296?ref_src=twsrc%5Etfw">January 18, 2019</a></blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+The third main theme I connected with from this conference was about how much of what we do as data scientists or analysts is not code, but teaching (as Felienne addressed), growing teams, and more. Hilary Parker gave a talk about using data more effectively by broadening how we think about our focus, beyond strictly technical strengths to include more collaborative and design skills.
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1086316323473408007')
+```
+
+
+Other excellent talks in this category that I saw were JD Long's talk about [spreadsheets and bullshit](https://twitter.com/CMastication/status/1086351419316363264) (that's what his shirt said, and he should probably start selling them), along with empathy and broadening the tent. Others are Caitlin Hudon's talk about [different kinds of mistakes she's made](https://twitter.com/juliasilge/status/1086340177704951809) and Angela Bassa's talk about [building data science teams](https://twitter.com/juliasilge/status/1086318410135465984).
+
+The final session of the conference was a panel discussion focusing on data in organizations. I have a [tweet thread](https://twitter.com/juliasilge/status/1086389982019969024) where I jotted down perspectives the participants shared, from thoughts on junior data scientists, management vs. individual contributor work, team values, and data ethics.
+
+<blockquote class="twitter-tweet" data-conversation="none" data-lang="en"><p lang="en" dir="ltr">Final <a href="https://twitter.com/hashtag/Rstudioconf?src=hash&amp;ref_src=twsrc%5Etfw">#Rstudioconf</a> panel making points we haven’t talked about enough yet: slow down, invest in leadership as skill development, and HIRE DIVERSE TEAMS <br><br>Feat. <a href="https://twitter.com/AngeBassa?ref_src=twsrc%5Etfw">@AngeBassa</a>, <a href="https://twitter.com/hspter?ref_src=twsrc%5Etfw">@hspter</a>, <a href="https://twitter.com/_inundata?ref_src=twsrc%5Etfw">@_inundata</a>, &amp; <a href="https://twitter.com/tracykteal?ref_src=twsrc%5Etfw">@tracykteal</a>, moderated by Eduardo Ariño de la Rubia <a href="https://t.co/cxCh8gSo7u">pic.twitter.com/cxCh8gSo7u</a></p>&mdash; Brooke Watson (@brookLYNevery1) <a href="https://twitter.com/brookLYNevery1/status/1086399588431511552?ref_src=twsrc%5Etfw">January 18, 2019</a></blockquote>
+<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+
+## BONUS ROUND
+
+On Saturday, I participated in the first ever [Tidyverse Developer Day](https://www.tidyverse.org/articles/2018/08/tidyverse-developer-day/). The goal of this event was to nurture regular contributors to tidyverse packages, especially from people who have not done so before. I maintain [an R package](https://github.com/juliasilge/tidytext) that is tidyverse adjacent myself and have managed issues and PRs as a maintainer, but I had never written code for a core tidyverse package before or submitted a PR to a package with that kind of enormous user base. This developer day was a really valuable experience. First off, it was so, so fun to sit in a room with engaged, delightful people excited about what they are working on, chatting together while looking at issues, thinking about what improvements could help users like us. Second, I saw multiple people around me submit their first **ever** PRs, which is no small feat. I am (mostly) competent in package development and git so got to chat through some problems people had, but naturally the real experts were around as well.
+
+
+```{r echo=FALSE}
+blogdown::shortcode('tweet', '1086783468229611520')
+```
+
+I submitted three PRs during the day. Two of them were extremely tiny; the one I am happiest about is [improving the error message in tidyr when you use `spread()` and end up with duplicate identifiers](https://github.com/tidyverse/tidyr/pull/534). That's something that I have experienced lots of times in my real world data life and lost time to puzzling over; the new error message is more clear, aligns with the [tidyverse error message style guide](https://style.tidyverse.org/error-messages.html), and gives guidance on what to try next.
+
+
+I so enjoyed rstudio::conf this year. One thing I noticed this year is that both the speakers *and* the attendees exhibited some of the best representation by women I have ever experienced in a technical community. I hope to continue to see improving representation from other groups who are often under-indexed in data science and tech. I'll look forward to putting what I learned into practice in both my day job and open source work, and hopefully to be back next year!

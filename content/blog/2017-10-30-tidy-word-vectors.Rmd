@@ -1,0 +1,260 @@
+---
+title: "Word Vectors with tidy data principles"
+date: 2017-10-30
+slug: "tidy-word-vectors"
+tags: [rstats]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 180, cache.lazy = FALSE)
+options(width=80, dplyr.width = 150)
+library(ggplot2)
+library(silgelib)
+theme_set(theme_roboto())
+```
+
+Last week I saw Chris Moody's [post on the Stitch Fix blog](http://multithreaded.stitchfix.com/blog/2017/10/18/stop-using-word2vec/) about calculating word vectors from a corpus of text using word counts and matrix factorization, and I was so excited! This blog post illustrates how to implement that approach to find word vector representations in R using tidy data principles and sparse matrices. 
+
+Word vectors, or word embeddings, are typically calculated using neural networks; that is what [word2vec](https://en.wikipedia.org/wiki/Word2vec) is. ([GloVe embeddings](https://nlp.stanford.edu/projects/glove/) are trained a little differently than word2vec.) By contrast, the approach from Chris's post that I'm implementing here uses only counting and some linear algebra. Deep learning is great, but I am super excited about this approach because it allows practitioners to find word vectors for their own collections of text (no need to rely on pre-trained vectors) using familiar techniques that are not difficult to understand. And it doesn't take too long computationally!
+
+## Getting some data
+
+Let's download half a million observations from... the [Hacker News corpus](https://cloud.google.com/bigquery/public-data/hacker-news). 
+
+<iframe src="https://giphy.com/embed/uwZhzLqlV0cZq" width="480" height="354" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/buster-keaton-uwZhzLqlV0cZq">via GIPHY</a></p>
+
+I know, right? But it's the dataset that Chris uses in his blog post and it gives me an opportunity to use the [bigrquery](https://cran.r-project.org/package=bigrquery) package for the first time.
+
+```{r hacker_news_raw}
+library(bigrquery)
+library(tidyverse)
+
+project <- "my-first-project-184003"
+
+sql <- "#legacySQL
+SELECT
+  stories.title AS title,
+  stories.text AS text
+FROM
+  [bigquery-public-data:hacker_news.full] AS stories
+WHERE
+  stories.deleted IS NULL
+LIMIT
+  500000"
+
+hacker_news_raw <- query_exec(sql, project = project, max_pages = Inf)
+```
+
+Next, let's clean this text up to take care of some of the messy ways it has gotten encoded.
+
+```{r hacker_news_text, dependson="hacker_news_raw"}
+library(stringr)
+
+hacker_news_text <- hacker_news_raw %>%
+    as_tibble() %>%
+    mutate(title = na_if(title, ""),
+           text = coalesce(title, text)) %>%
+    select(-title) %>%
+    mutate(text = str_replace_all(text, "&quot;|&#x2F;", "'"),    ## hex encoding
+           text = str_replace_all(text, "&#x2F;", "/"),           ## more hex
+           text = str_replace_all(text, "<a(.*?)>", " "),         ## links 
+           text = str_replace_all(text, "&gt;|&lt;", " "),        ## html yuck
+           text = str_replace_all(text, "<[^>]*>", " "),          ## mmmmm, more html yuck
+           postID = row_number())
+```
+
+## Unigram probabilities
+
+First, let's calculate the unigram probabilities, how often we see each word in this corpus. This is straightforward using `unnest_tokens()` from the [tidytext](https://github.com/juliasilge/tidytext) package and then just `count()` and `mutate()` from dplyr.
+
+```{r unigram_probs, dependson="hacker_news_text"}
+library(tidytext)
+
+unigram_probs <- hacker_news_text %>%
+    unnest_tokens(word, text) %>%
+    count(word, sort = TRUE) %>%
+    mutate(p = n / sum(n))
+
+unigram_probs
+```
+
+
+## Skipgram probabilities
+
+Next, we need to calculate the skipgram probabilities, how often we find each word near each other word. We do this by defining a fixed-size moving window that centers around each word. Do we see `word1` and `word2` together within this window? I take the approach here of using `unnest_tokens()` once with `token = "ngrams"` to find all the windows I need, then using `unnest_tokens()` again to tidy these n-grams. After that, I can use `pairwise_count()` from the [widyr](https://github.com/dgrtwo/widyr) package to count up cooccuring pairs within each n-gram/sliding window.
+
+I'm not sure what the ideal value for window size is here for the skipgrams. This value determines the sliding window that we move through the text, counting up bigrams that we find within the window. When this window is bigger, the process of counting skipgrams takes longer, obviously. I experimented a bit and windows of 8 words seem to work pretty well. Probably more work needed here! I'd be happy to be pointed to more resources on this topic.
+
+Finding all the skipgrams is a computationally expensive part of this process. Not something that just runs instantly!
+
+```{r skipgram_probs, dependson="hacker_news_text"}
+library(widyr)
+
+tidy_skipgrams <- hacker_news_text %>%
+    unnest_tokens(ngram, text, token = "ngrams", n = 8) %>%
+    mutate(ngramID = row_number()) %>% 
+    unite(skipgramID, postID, ngramID) %>%
+    unnest_tokens(word, ngram)
+
+tidy_skipgrams
+
+skipgram_probs <- tidy_skipgrams %>%
+    pairwise_count(word, skipgramID, diag = TRUE, sort = TRUE) %>%
+    mutate(p = n / sum(n))
+```
+
+
+## Normalized skipgram probability
+
+We now know how often words occur on their own, and how often words occur together with other words. We can calculate which words occurred together more often than expected based on how often they occurred on their own. When this number is high (greater than 1), the two words are associated with each other, likely to occur together. When this number is low (less than 1), the two words are not associated with each other, unlikely to occur together.
+
+```{r normalized_prob, dependson=c("skipgram_probs", "unigram_probs")}
+normalized_prob <- skipgram_probs %>%
+    filter(n > 20) %>%
+    rename(word1 = item1, word2 = item2) %>%
+    left_join(unigram_probs %>%
+                  select(word1 = word, p1 = p),
+              by = "word1") %>%
+    left_join(unigram_probs %>%
+                  select(word2 = word, p2 = p),
+              by = "word2") %>%
+    mutate(p_together = p / p1 / p2)
+```
+
+
+What are the words most associated with Facebook on Hacker News?
+
+```{r dependson="normalized_prob"}
+normalized_prob %>% 
+    filter(word1 == "facebook") %>%
+    arrange(-p_together)
+```
+
+What about the programming language Scala?
+
+```{r dependson="normalized_prob"}
+normalized_prob %>% 
+    filter(word1 == "scala") %>%
+    arrange(-p_together)
+```
+
+Looks good!
+
+## Cast to a sparse matrix
+
+We want to do matrix factorization, so we should probably make a matrix. We can use `cast_sparse()` from the tidytext package to transform our tidy data frame to a matrix.
+
+```{r pmi_matrix, dependson="normalized_prob"}
+pmi_matrix <- normalized_prob %>%
+    mutate(pmi = log10(p_together)) %>%
+    cast_sparse(word1, word2, pmi)
+```
+
+What is the type of this object?
+
+```{r dependson="pmi_matrix"}
+class(pmi_matrix)
+```
+
+
+The `dgCMatrix` class is a class of sparse numeric matrices in R. Text data like this represented in matrix form usually has lots and lots of zeroes, so we want to make use of sparse data structures to save us time and memory and all that.
+
+## Reduce the matrix dimensionality
+
+We want to get information out of this giant matrix in a more useful form, so it's time for singular value decomposition. Since we have a sparse matrix, we don't want to use base R's `svd` function, which casts the input to a plain old matrix (not sparse) first thing. Instead we will use the fast SVD algorithm for sparse matrices in the [irlba](https://cran.r-project.org/package=irlba) package.
+
+```{r pmi_svd, dependson="pmi_matrix"}
+library(irlba)
+
+pmi_svd <- irlba(pmi_matrix, 256, maxit = 1e3)
+```
+
+The number 256 here means that we are finding 256-dimensional vectors for the words. This is another thing that I am not sure exactly what the best number is, but it will be easy to experiment with. Doing the matrix factorization is another part of this process that is a bit time intensive, but certainly not slow compared to training word2vec on a big corpus. In my experimenting here, it takes less time than counting up the skipgrams.
+
+Once we have the singular value decomposition, we can get out the word vectors! Let's set some row names, using our input, so we can find out what is what.
+
+```{r word_vectors, dependson="pmi_svd"}
+word_vectors <- pmi_svd$u
+rownames(word_vectors) <- rownames(pmi_matrix)
+```
+
+Now we can search our matrix of word vectors to find synonyms. I want to get back to a tidy data structure at this point, so I'll write a new little function for tidying.
+
+```{r facebook, dependson="word_vectors"}
+library(broom)
+
+search_synonyms <- function(word_vectors, selected_vector) {
+    
+    similarities <- word_vectors %*% selected_vector %>%
+        tidy() %>%
+        as_tibble() %>%
+        rename(token = .rownames,
+               similarity = unrowname.x.)
+    
+    similarities %>%
+        arrange(-similarity)    
+}
+
+facebook <- search_synonyms(word_vectors, word_vectors["facebook",])
+facebook
+
+haskell <- search_synonyms(word_vectors, word_vectors["haskell",])
+haskell
+```
+
+That's... pretty darn amazing. Let's visualize the most similar words vector to Facebook and Haskell from this dataset of Hacker News posts.
+
+```{r vectors_plot, dependson="facebook", fig.width=8, fig.height=5}
+facebook %>%
+    mutate(selected = "facebook") %>%
+    bind_rows(haskell %>%
+                  mutate(selected = "haskell")) %>%
+    group_by(selected) %>%
+    top_n(15, similarity) %>%
+    ungroup %>%
+    mutate(token = reorder(token, similarity)) %>%
+    ggplot(aes(token, similarity, fill = selected)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~selected, scales = "free") +
+    coord_flip() +
+    theme(strip.text=element_text(hjust=0, family="Roboto-Bold", size=12)) +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(x = NULL, title = "What word vectors are most similar to Facebook or Haskell?",
+         subtitle = "Based on the Hacker News corpus, calculated using counts and matrix factorization")
+```
+
+
+We can also do the familiar **WORD MATH** that is so fun with the output of word2vec; you have probably seen examples such as `King - Man + Woman = Queen` and such. We can just add and subtract our word vectors, and then search the matrix we built!
+
+If the iPhone is an important product associated with Apple, as discussed on Hacker News, what is an important product associated with Microsoft?
+
+```{r dependson="word_vectors"}
+mystery_product <- word_vectors["iphone",] - word_vectors["apple",] + word_vectors["microsoft",]
+search_synonyms(word_vectors, mystery_product)
+```
+
+We even see some mobile phone and Android terms in this list, below Windows.
+
+What about an important product associated with Google?
+
+```{r dependson="word_vectors"}
+mystery_product <- word_vectors["iphone",] - word_vectors["apple",] + word_vectors["google",]
+search_synonyms(word_vectors, mystery_product)
+```
+
+Google itself is at the top of the list, which is something that often happens to me when I try this word vector arithmetic no matter how I train them (usually one of the positive vectors in the "equation"). Does anyone know what that means? Anyway, "search", is next on the list. 
+
+```{r dependson="word_vectors"}
+mystery_product <- word_vectors["iphone",] - word_vectors["apple",] + word_vectors["amazon",]
+search_synonyms(word_vectors, mystery_product)
+```
+
+For Amazon, we get AWS, S3, and EC2, as well as book. Nice!
+
+## The End
+
+I am so excited about this approach! Like Chris said in his blog post, for all the applications in the kind of work I do (non-academic, industry NLP) these type of word vectors will work *great*. No need for neural networks! This approach is still not lightning fast (I have to sit and wait for parts of it to run) but I can easily implement it with the tools I am familiar with. I would imagine there are vast swaths of data science practitioners for whom this is also true. I am considering the idea of bundling some of these types of functions up into an R package, and Dave has just built a [`pairwise_pmi()` function in the development version of widyr that simplifies this approach even more](https://github.com/dgrtwo/widyr/commit/e297c547a1599e48bd3afd23fead6bd01310253a). Tidy word vectors, perhaps? Maybe I'll also look into the [higher rank extension of this technique](http://multithreaded.stitchfix.com/blog/2017/10/25/word-tensors/) to get at word and document vectors!
+
+Let me know if you have feedback or questions.

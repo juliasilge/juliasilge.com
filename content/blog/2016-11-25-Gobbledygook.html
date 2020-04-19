@@ -1,0 +1,201 @@
+---
+title: "Measuring Gobbledygook"
+slug: "Gobbledygook"
+date: 2016-11-25
+excerpt: "Readability in text using tidy data principles"
+tags: [rstats]
+---
+
+
+
+<p>In learning more about <a href="http://tidytextmining.com/">text mining</a> over the past several months, one aspect of text that I’ve been interested in is readability. A text’s readability measures how hard or easy it is for a reader to read and understand what a text is saying; it depends on how sentences are written, what words are chosen, and so forth. I first became really aware of readability scores of books through my kids’ reading tracking websites for school, but it turns out there are <a href="https://en.wikipedia.org/wiki/Readability#Popular_readability_formulas">lots of frameworks for measuring readability</a>.</p>
+<p>One of the most commonly used ways to measure readability is a <a href="https://en.wikipedia.org/wiki/SMOG">SMOG</a> grade, which stands for “Simple Measure of Gobbledygook”. It may have a silly (SILLY WONDERFUL) name, but it is often considered the gold standard of readability formulas and performs well in many contexts. We calculate a SMOG score using the formula</p>
+<p><span class="math display">\[\text{SMOG} = 1.0430\sqrt{\frac{30n_{\text{polysyllables}}}{n_{\text{sentences}}}} + 3.1291\]</span></p>
+<p>where the number in the numerator measures the number of words with 3 or more syllables and the number in the denominator measures the number of sentences. You can see that SMOG is going to be higher for texts with a lot of words with many syllables in each sentence. These ratios are typically normalized to use a sample of 30 sentences, and then the SMOG grade is supposed to estimate the years of education needed to understand a text.</p>
+<p>This seems like it is perfectly suited to an analysis using tidy data principles, so let’s use the <a href="https://github.com/juliasilge/tidytext">tidytext package</a> to compare the readability of several texts.</p>
+<div id="getting-some-texts-to-analyze" class="section level2">
+<h2>Getting some texts to analyze</h2>
+<p>Let’s use the <a href="https://github.com/ropenscilabs/gutenbergr">gutenbergr package</a> to obtain some book texts to compare. I want to compare:</p>
+<ul>
+<li><a href="https://www.gutenberg.org/ebooks/45"><em>Anne of Green Gables</em> by L. M. Montgomery</a></li>
+<li><a href="https://www.gutenberg.org/ebooks/514"><em>Little Women</em> by Louisa May Alcott</a></li>
+<li><a href="https://www.gutenberg.org/ebooks/42671"><em>Pride and Prejudice</em> by Jane Austen</a> (I mean, DUH)</li>
+<li><a href="https://www.gutenberg.org/ebooks/4217"><em>A Portrait of the Artist as a Young Man</em> by James Joyce</a></li>
+<li><a href="https://www.gutenberg.org/ebooks/135"><em>Les Misérables</em> by Victor Hugo</a></li>
+</ul>
+<pre class="r"><code>library(gutenbergr)
+books &lt;- gutenberg_download(c(45, 514, 42671, 4217, 135),
+                            meta_fields = &quot;title&quot;)</code></pre>
+<p>I really wanted to throw some Ernest Hemingway in there, but none of his works are on Project Gutenberg; I guess they are not public domain.</p>
+</div>
+<div id="tidying-the-text" class="section level2">
+<h2>Tidying the text</h2>
+<p>Now we have our texts in hand, and we need to do some data wrangling to get it in the form that we need. We are interested in counting two things here:</p>
+<ul>
+<li>the number of sentences</li>
+<li>the number of words with 3 or more syllables</li>
+</ul>
+<p>Let’s start by working with the sentences. The <code>unnest_tokens</code> function in tidytext has an option to tokenize by sentences, but it can have trouble with UTF-8 encoded text, lots of dialogue, etc. We need to use <code>iconv</code> first on the UTF-8 text from Project Gutenberg before trying to tokenize by sentences. Also, we have three different books in this dataframe, so we need to <code>nest</code> and <code>map</code> so that we count sentences separately for each book; <code>unnest_tokens</code> will collapse all the text in a dataframe together before tokenizing by something like sentences, n-grams, etc.</p>
+<pre class="r"><code>library(dplyr)
+library(tidytext)
+library(tidyr)
+library(purrr)
+
+tidybooks &lt;- books %&gt;%
+    mutate(text = iconv(text, to = &#39;latin1&#39;)) %&gt;%
+    nest(-title) %&gt;%
+    mutate(tidied = map(data, unnest_tokens, &#39;sentence&#39;, &#39;text&#39;, token = &#39;sentences&#39;))</code></pre>
+<p>It still takes me a bit of thinking and experimenting every time I need to <code>nest</code> and <code>map</code>, but what a great way to do what I need! How did this work out?</p>
+<pre class="r"><code>tidybooks</code></pre>
+<pre><code>## # A tibble: 5 x 3
+##                                     title                  data                tidied
+##                                     &lt;chr&gt;                &lt;list&gt;                &lt;list&gt;
+## 1                    Anne of Green Gables &lt;tibble [10,779 x 2]&gt;  &lt;tibble [7,383 x 2]&gt;
+## 2                          Les Misérables &lt;tibble [67,273 x 2]&gt; &lt;tibble [35,682 x 2]&gt;
+## 3                            Little Women &lt;tibble [20,627 x 2]&gt; &lt;tibble [10,117 x 2]&gt;
+## 4 A Portrait of the Artist as a Young Man  &lt;tibble [9,938 x 2]&gt;  &lt;tibble [4,583 x 2]&gt;
+## 5                     Pride and Prejudice &lt;tibble [13,311 x 2]&gt;  &lt;tibble [6,951 x 2]&gt;</code></pre>
+<p>The <code>data</code> column contains the original untidied text and the <code>tidied</code> column contains the tidied text, organized with each sentence on its own row; both are list-columns. Now let’s unnest this so we get rid of the list-columns and have sentences in their own rows.</p>
+<pre class="r"><code>tidybooks &lt;- tidybooks %&gt;%
+    unnest(tidied)
+
+tidybooks</code></pre>
+<pre><code>## # A tibble: 64,716 x 3
+##                   title gutenberg_id
+##                   &lt;chr&gt;        &lt;int&gt;
+##  1 Anne of Green Gables           45
+##  2 Anne of Green Gables           45
+##  3 Anne of Green Gables           45
+##  4 Anne of Green Gables           45
+##  5 Anne of Green Gables           45
+##  6 Anne of Green Gables           45
+##  7 Anne of Green Gables           45
+##  8 Anne of Green Gables           45
+##  9 Anne of Green Gables           45
+## 10 Anne of Green Gables           45
+## # ... with 64,706 more rows, and 1 more variables: sentence &lt;chr&gt;</code></pre>
+<p>How did the sentence tokenizing do?</p>
+<pre class="r"><code>tidybooks %&gt;% 
+    sample_n(5) %&gt;% 
+    select(sentence)</code></pre>
+<pre><code>## # A tibble: 5 x 1
+##                                                                                                                                                 sentence
+##                                                                                                                                                    &lt;chr&gt;
+## 1                                                                                    &quot;\&quot;i am certainly the most fortunate creature that ever existed!\&quot;&quot;
+## 2 the assassinated man who flees is more suspicious than the assassin, and it is probable that this personage, who had been so precious a capture for th
+## 3                                                                                                          she has more the air of a bat than of a lark.
+## 4                                                                                 all at once he took off his hat and placed it on the edge of the quay.
+## 5                         it was not a combat, it was the interior of a furnace; there mouths breathed the flame; there countenances were extraordinary.</code></pre>
+<p>Pretty well! Especially considering the whole thing errors out without <code>iconv</code>.</p>
+<p>Now we know how to count the number of sentences in each book.</p>
+<pre class="r"><code>tidybooks %&gt;%
+    group_by(title) %&gt;%
+    summarise(n_sentences = n_distinct(sentence))</code></pre>
+<pre><code>## # A tibble: 5 x 2
+##                                     title n_sentences
+##                                     &lt;chr&gt;       &lt;int&gt;
+## 1 A Portrait of the Artist as a Young Man        4480
+## 2                    Anne of Green Gables        7176
+## 3                          Les Misérables       34229
+## 4                            Little Women        9888
+## 5                     Pride and Prejudice        6524</code></pre>
+<p>There we go! An estimate of the number of sentences in each book.</p>
+</div>
+<div id="counting-syllables" class="section level2">
+<h2>Counting syllables</h2>
+<p>The next thing we need to do here is count the syllables in each word so that we can find how many words in each book have more than 3 syllables. I did a bit of background checking on how this is done, and found <a href="http://lingtools.uoregon.edu/scripts/english_syllable_counter-102.R">this implementation of syllable counting</a> by <a href="http://pages.uoregon.edu/tsk/">Tyler Kendall</a> at the University of Oregon. It is actually an implementation in R of an algorithm originally written in PHP by Greg Fast, and it seems like a standard way people do this. It is estimated to have an error rate of ~15%, and is usually off by only one syllable when it is wrong.</p>
+<p>I’m including this function in a code chunk with <code>echo = FALSE</code> because it is really long and I didn’t write it, but you can check out the <a href="https://github.com/juliasilge/juliasilge.github.io/blob/master/_R/2016-11-25-Gobbledygook.Rmd">R Markdown file</a> that made this blog post to see the details.</p>
+<p>Let’s check out how it works!</p>
+<pre class="r"><code>count_syllables(&quot;dog&quot;)</code></pre>
+<pre><code>## [1] 1</code></pre>
+<pre class="r"><code>count_syllables(&quot;science&quot;)</code></pre>
+<pre><code>## [1] 2</code></pre>
+<pre class="r"><code>count_syllables(&quot;couldn&#39;t&quot;)</code></pre>
+<pre><code>## [1] 2</code></pre>
+<pre class="r"><code>count_syllables(&quot;My name is Julia Silge.&quot;)</code></pre>
+<pre><code>## [1] 7</code></pre>
+<p>Well, my last name is actually two syllables, but most human beings get that wrong too, so there we go.</p>
+<p>Now let’s start counting the syllables in all the words in our books. Let’s use <code>unnest_tokens</code> again to extract all the single words from the sentences; this time we will set <code>drop = FALSE</code> so we keep the sentences for counting purposes. Let’s add a new column that will count the syllables for each word. (This takes a bit to run on my fairly speedy/new desktop; that function for counting syllables is not built for speed.)</p>
+<pre class="r"><code>tidybooks &lt;- tidybooks %&gt;%
+    unnest_tokens(word, sentence, drop = FALSE) %&gt;%
+    rowwise() %&gt;%
+    mutate(n_syllables = count_syllables(word)) %&gt;%
+    ungroup()
+
+tidybooks %&gt;%
+    select(word, n_syllables)</code></pre>
+<pre><code>## # A tibble: 1,070,066 x 2
+##          word n_syllables
+##         &lt;chr&gt;       &lt;dbl&gt;
+##  1       anne           1
+##  2         of           1
+##  3      green           1
+##  4     gables           2
+##  5         by           1
+##  6       lucy           2
+##  7       maud           1
+##  8 montgomery           4
+##  9      table           2
+## 10         of           1
+## # ... with 1,070,056 more rows</code></pre>
+<p>Let’s check out the distributions of syllables for the three titles.</p>
+<pre class="r"><code>library(ggplot2)
+ggplot(tidybooks, aes(n_syllables, fill = title, color = title)) +
+    geom_density(alpha = 0.1, size = 1.1, adjust = 9) +
+    theme_minimal(base_family = &quot;RobotoCondensed-Regular&quot;) +
+    theme(plot.title=element_text(family=&quot;Roboto-Bold&quot;)) +
+    theme(legend.title=element_blank()) +
+    theme(legend.position = c(0.8, 0.8)) +
+    labs(x = &quot;Number of syllables per word&quot;,
+         y = &quot;Density&quot;,
+         title = &quot;Comparing syllables per word across novels&quot;,
+         subtitle = &quot;Jane Austen uses the lowest proportion of words with one syllable&quot;)</code></pre>
+<p><img src="/blog/2016/2016-11-25-Gobbledygook_files/figure-html/unnamed-chunk-11-1.png" width="1260" /></p>
+<p>These distributions are pretty similar, but there are some moderate differences. <em>Little Women</em> and <em>Les Misérables</em> have the highest proportion of words with only one syllable, while <em>Pride and Prejudice</em> has the lowest proportion. This makes some sense, since Louisa May Alcott was writing for young readers while Jane Austen was not. <em>Les Misérables</em> was originally written in French and we are analyzing a translation here, so that is a complicating factor. James Joyce, with his moocows or whatever, is in the middle here.</p>
+</div>
+<div id="calculating-smog" class="section level2">
+<h2>Calculating SMOG</h2>
+<p>Now we know both the number of sentences and the number of syllables in these books, so we can calculate… the gobbledygook! This will just end up being a bunch of dplyr operations.</p>
+<pre class="r"><code>results &lt;- left_join(tidybooks %&gt;%
+                         group_by(title) %&gt;%
+                         summarise(n_sentences = n_distinct(sentence)),
+                     tidybooks %&gt;% 
+                         group_by(title) %&gt;% 
+                         filter(n_syllables &gt;= 3) %&gt;% 
+                         summarise(n_polysyllables = n())) %&gt;%
+    mutate(SMOG = 1.0430 * sqrt(30 * n_polysyllables/n_sentences) + 3.1291)
+
+results</code></pre>
+<pre><code>## # A tibble: 5 x 4
+##                                     title n_sentences n_polysyllables      SMOG
+##                                     &lt;chr&gt;       &lt;int&gt;           &lt;int&gt;     &lt;dbl&gt;
+## 1 A Portrait of the Artist as a Young Man        4480            5648  9.543459
+## 2                    Anne of Green Gables        7176            7664  9.032898
+## 3                          Les Misérables       34228           55114 10.378218
+## 4                            Little Women        9888           11590  9.313996
+## 5                     Pride and Prejudice        6524           13180 11.248906</code></pre>
+<p>L.M. Montgomery, writing here for an audience of young girls, has the lowest SMOG grade at around 9 (i.e., approximately beginning 9th grade level). <em>Pride and Prejudice</em> has the highest SMOG grade at 11.2, more than two years of education higher. I will say that throwing <em>A Portrait of the Artist as a Young Man</em> in here turned out to be an interesting choice; in reality, I find it to be practically unreadable but it has a readability score close to the same as <em>Little Women</em>. This measure of prose readability based only on number of sentences and number of words with lots of syllables doesn’t measure what we might expect when applied to extremely stylized text.</p>
+<p>Let’s visualize the readability scores for these five novels.</p>
+<pre class="r"><code>library(ggstance)
+library(ggthemes)
+library(forcats)
+ggplot(results, aes(SMOG, fct_reorder(title, SMOG), fill = SMOG)) +
+    geom_barh(stat = &quot;identity&quot;, alpha = 0.8) +
+    theme_tufte(base_family = &quot;RobotoCondensed-Regular&quot;) +
+    geom_text(aes(x = 0.3, y = title, label = title), color=&quot;white&quot;,
+                  family=&quot;Roboto-Italic&quot;, size=3.5, hjust = 0) +
+    theme(plot.title=element_text(family=&quot;Roboto-Bold&quot;)) +
+    scale_fill_gradient(low = &quot;darkslategray3&quot;, high = &quot;turquoise4&quot;) +
+    theme(legend.position=&quot;none&quot;) +
+    theme(axis.ticks=element_blank()) +
+    scale_x_continuous(expand=c(0,0)) +
+    theme(axis.text.y=element_blank()) +
+    labs(y = NULL, x = &quot;SMOG Grade&quot;,
+         title = &quot;Comparing readability scores across novels&quot;,
+         subtitle = &quot;Jane Austen&#39;s SMOG grade is highest, while L.M. Montgomery&#39;s is lowest&quot;)</code></pre>
+<p><img src="/blog/2016/2016-11-25-Gobbledygook_files/figure-html/unnamed-chunk-13-1.png" width="1260" /></p>
+</div>
+<div id="the-end" class="section level2">
+<h2>The End</h2>
+<p>I would like to thank <a href="https://benheubl.github.io/">Ben Heubl</a>, a data journalist at <em>The Economist</em>, for interesting discussions that motivated this blog post. The R Markdown file used to make this blog post is available <a href="https://github.com/juliasilge/juliasilge.github.io/blob/master/_R/2016-11-25-Gobbledygook.Rmd">here</a>. I am very happy to hear feedback or questions!</p>
+</div>

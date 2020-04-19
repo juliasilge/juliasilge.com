@@ -1,0 +1,19 @@
+# Theme metadata
+name = "julia"
+
+# Is theme light or dark?
+light = true
+
+# Primary
+primary = "#0FB0B2"
+
+# Menu
+menu_primary = "#ffffff"
+menu_text = "#333"
+menu_text_active = "#0FB0B2"
+menu_title = "#333"
+
+# Backgrounds
+background = "#ffffff"
+home_section_odd = "#ffffff"
+home_section_even = "#ffffff"

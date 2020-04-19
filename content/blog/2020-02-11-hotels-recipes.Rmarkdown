@@ -1,0 +1,260 @@
+---
+title: "#TidyTuesday hotel bookings and recipes"
+date: 2020-02-11
+slug: "hotels-recipes"
+tags: [rstats,tidymodels]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+Last week I published [my first screencast](https://juliasilge.com/blog/intro-tidymodels/) showing how to use the tidymodels framework for machine learning and modeling in R. Today, I'm using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on hotel bookings to show how to use one of the tidymodels packages [**recipes**](https://tidymodels.github.io/recipes/) with some simple models!
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "dbXDkEEuvCU")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal here is to predict which hotel stays include children (vs. do not include children or babies) based on the other characteristics in this dataset such as which hotel the guests stay at, how much they pay, etc. The [paper that this data comes from](https://www.sciencedirect.com/science/article/pii/S2352340918315191) points out that the distribution of many of these variables (such as number of adults/children, room type, meals bought, country, and so forth) is different for canceled vs. not canceled hotel bookings. This is mostly because more information is gathered when guests check in; the biggest contributor to these differences is not that people who cancel are different from people who do not.
+
+To build our models, let's filter to **only** the bookings that did not cancel and build a model to predict which hotel stays include children and which do not.
+
+```{r}
+library(tidyverse)
+
+hotels <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-02-11/hotels.csv')
+
+
+hotel_stays <- hotels %>%
+    filter(is_canceled == 0) %>%
+    mutate(children = case_when(children + babies > 0 ~ "children",
+                                TRUE ~ "none"),
+           required_car_parking_spaces = case_when(required_car_parking_spaces > 0 ~ "parking",
+                                                   TRUE ~ "none")) %>%
+    select(-is_canceled, -reservation_status, -babies)
+
+hotel_stays
+
+hotel_stays %>%
+    count(children)
+```
+
+There are more than 10x more hotel stays without children than with.
+
+When I have a new dataset like this one, I often use the [skimr](https://github.com/ropensci/skimr) package to get an overview of the dataset's characteristics. The numeric variables here have different very different values and distributions (big vs. small).
+
+```{r, render = knitr::normal_print}
+library(skimr)
+
+skim(hotel_stays)
+```
+
+How do the hotel stays of guests with/without children vary throughout the year? Is this different in the city and the resort hotel?
+
+```{r month_children, fig.width=8, fig.height=7}
+hotel_stays %>%
+    mutate(arrival_date_month = factor(arrival_date_month,
+                                       levels = month.name)) %>%
+    count(hotel, arrival_date_month, children) %>%
+    group_by(hotel, children) %>%
+    mutate(proportion = n / sum(n)) %>%
+    ggplot(aes(arrival_date_month, proportion, fill = children)) +
+    geom_col(position = "dodge") +
+    scale_y_continuous(labels = scales::percent_format()) +
+    facet_wrap(~hotel, nrow = 2) +
+    labs(x = NULL, 
+         y = "Proportion of hotel stays",
+         fill = NULL)
+```
+
+Are hotel guests with children more likely to require a parking space?
+
+```{r parking_children, fig.width=8, fig.height=7}
+hotel_stays %>%
+    count(hotel, required_car_parking_spaces, children) %>%
+    group_by(hotel, children) %>%
+    mutate(proportion = n / sum(n)) %>%
+    ggplot(aes(required_car_parking_spaces, proportion, fill = children)) +
+    geom_col(position = "dodge") +
+    scale_y_continuous(labels = scales::percent_format()) +
+    facet_wrap(~hotel, nrow = 2) +
+    labs(x = NULL, 
+         y = "Proportion of hotel stays",
+         fill = NULL)
+```
+
+There are many more relationships like this we can explore. In many situations I like to use the `ggpairs()` function to get a high-level view of how variables are related to each other.
+
+```{r children_pairs, fig.width=12, fig.height=12}
+library(GGally)
+
+hotel_stays %>%
+    select(children, adr,
+           required_car_parking_spaces,
+           total_of_special_requests) %>%
+    ggpairs(mapping = aes(color = children))
+```
+
+To see more examples of EDA for this dataset, you can see the great work [that folks share on Twitter](https://twitter.com/hashtag/tidytuesday)! `r emo::ji("sparkles")`
+
+## Build models with recipes
+
+The next step for us is to create a dataset for modeling. Let's include a set of columns we are interested in, and convert all the `character` columns to factors, for the modeling functions coming later.
+
+```{r}
+hotels_df <- hotel_stays %>%
+    select(children, hotel, arrival_date_month, meal, adr, adults,
+           required_car_parking_spaces, total_of_special_requests,
+           stays_in_week_nights, stays_in_weekend_nights) %>%
+    mutate_if(is.character, factor)
+```
+
+Now it is time for [tidymodels](https://github.com/tidymodels/tidymodels)! The first few lines here may [look familiar from last time](https://juliasilge.com/blog/intro-tidymodels/); we split the data into training and testing sets using `initial_split()`. Next, we use a `recipe()` to build a set of steps for data preprocessing and feature engineering.
+
+- First, we must tell the `recipe()` what our model is going to be (using a formula here) and what our training data is.
+- We then downsample the data, since there are about 10x more hotel stays without children than with. If we don't do this, our model will learn very effectively about how to predict the negative case. `r emo::ji("disappointed")`
+- We then convert the factor columns into (one or more) numeric binary (0 and 1) variables for the levels of the training data.
+- Next, we remove any numeric variables that have zero variance.
+- As a last step, we normalize (center and scale) the numeric variables. We need to do this because some of them are on very different scales from each other and the model we want to train is sensitive to this.
+- Finally, we `prep()` the `recipe()`. This means we actually do something with the steps and our training data; we estimate the required parameters from `hotel_train` to implement these steps so this whole sequence can be applied later to another dataset.
+
+We then can do exactly that, and apply these transformations to the testing data; the function for this is `bake()`. We won't touch the testing set again until the very end.
+
+```{r}
+library(tidymodels)
+
+set.seed(1234)
+hotel_split <- initial_split(hotels_df)
+
+hotel_train <- training(hotel_split)
+hotel_test <- testing(hotel_split)
+
+hotel_rec <- recipe(children ~ ., data = hotel_train) %>%
+    step_downsample(children) %>%
+    step_dummy(all_nominal(), -all_outcomes()) %>%
+    step_zv(all_numeric()) %>%
+    step_normalize(all_numeric()) %>%
+    prep()
+
+hotel_rec
+
+test_proc <- bake(hotel_rec, new_data = hotel_test)
+```
+
+Now it's time to **specify** and then **fit** our models. First we specify and fit a nearest neighbors classification model, and then a decision tree classification model. Check out what data we are training these models on: `juice(hotel_rec)`. The recipe `hotel_rec` contains all our transformations for data preprocessing and feature engineering, *as well as* the data these transformations were estimated from. When we `juice()` the recipe, we squeeze that training data back out, transformed in the ways we specified including the downsampling. The object `juice(hotel_rec)` is a dataframe with `r comma(nrow(juice(hotel_rec)))` rows while the our original training data `hotel_train` has `r comma(nrow(hotel_train))` rows.
+
+```{r}
+knn_spec <- nearest_neighbor() %>%
+    set_engine("kknn") %>%
+    set_mode("classification")
+
+knn_fit <- knn_spec %>%
+    fit(children ~ ., data = juice(hotel_rec))
+
+knn_fit
+
+tree_spec <- decision_tree() %>%
+    set_engine("rpart") %>%
+    set_mode("classification")
+
+tree_fit <- tree_spec %>%
+    fit(children ~ ., data = juice(hotel_rec))
+
+tree_fit
+```
+
+We trained these models on the downsampled training data; we have not touched the testing data.
+
+## Evaluate models
+
+To evaluate these models, let's build a validation set. We can build a set of Monte Carlo splits from the downsampled training data (`juice(hotel_rec)`) and use this set of resamples to estimate the performance of our two models using the `fit_resamples()` function. This function does *not* do any tuning of the model parameters; in fact, it does not even keep the models it trains. This function is used for computing performance metrics across some set of resamples like our validation splits. It will fit a model such as `knn_spec` to each resample and evaluate on the heldout bit from each resample, and then we can `collect_metrics()` from the result.
+
+```{r}
+set.seed(1234)
+validation_splits <- mc_cv(juice(hotel_rec), prop = 0.9, strata = children)
+validation_splits
+
+knn_res <- fit_resamples(
+    children ~ .,
+    knn_spec,
+    validation_splits,
+    control = control_resamples(save_pred = TRUE)
+)
+
+knn_res %>%
+    collect_metrics()
+
+tree_res <- fit_resamples(
+    children ~ .,
+    tree_spec,
+    validation_splits,
+    control = control_resamples(save_pred = TRUE)
+)
+
+tree_res %>%
+    collect_metrics()
+```
+
+This validation set gives us a better estimate of how our models are doing than predicting the whole training set at once. The nearest neighbor model performs somewhat better than the decision tree. Let's visualize these results.
+
+```{r roc_curve, fig.width=7, fig.height=5}
+knn_res %>%
+    unnest(.predictions) %>%
+    mutate(model = "kknn") %>%
+    bind_rows(tree_res %>%
+                  unnest(.predictions) %>%
+                  mutate(model = "rpart")) %>%
+    group_by(model) %>%
+    roc_curve(children, .pred_children) %>%
+    ggplot(aes(x = 1 - specificity, y = sensitivity, color = model)) +
+    geom_line(size = 1.5) +
+    geom_abline(
+        lty = 2, alpha = 0.5,
+        color = "gray50",
+        size = 1.2
+    )
+```
+
+We can also create a confusion matrix.
+
+```{r knn_conf, fig.width=8, fig.height=5}
+knn_conf <- knn_res %>%
+    unnest(.predictions) %>%
+    conf_mat(children, .pred_class)
+
+knn_conf
+
+knn_conf %>%
+    autoplot()
+```
+
+FINALLY, let's check in with our transformed testing data and see how we can expect this model to perform on new data.
+
+```{r}
+knn_fit %>%
+    predict(new_data = test_proc, type = "prob") %>%
+    mutate(truth = hotel_test$children) %>%
+    roc_auc(truth, .pred_children)
+```
+
+Notice that this AUC value is about the same as from our validation splits.
+
+
+## Summary
+
+Let me know if you have questions or feedback about using recipes with tidymodels and how to get started. I am glad to be using these #TidyTuesday datasets for predictive modeling!
+
+

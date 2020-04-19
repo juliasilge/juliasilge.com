@@ -1,0 +1,271 @@
+---
+title: "Tidy word vectors, take 2!"
+date: 2017-11-27
+slug: "word-vectors-take-two"
+tags: [rstats]
+---
+
+
+
+<p>A few weeks ago, I wrote a post about finding <a href="https://juliasilge.com/blog/tidy-word-vectors/">word vectors using tidy data principles</a>, based on an approach outlined by Chris Moody on the <a href="http://multithreaded.stitchfix.com/blog/2017/10/18/stop-using-word2vec/">StitchFix tech blog</a>. I’ve been pondering how to improve this approach, and whether it would be nice to wrap up some of these functions in a package, so here is an update!</p>
+<p>Like in my previous post, let’s download half a million posts from the <a href="https://cloud.google.com/bigquery/public-data/hacker-news">Hacker News corpus</a> using the <a href="https://cran.r-project.org/package=bigrquery">bigrquery</a> package.</p>
+<pre class="r"><code>library(bigrquery)
+library(tidyverse)
+
+sql &lt;- &quot;#legacySQL
+SELECT
+  stories.title AS title,
+  stories.text AS text
+FROM
+  [bigquery-public-data:hacker_news.full] AS stories
+WHERE
+  stories.deleted IS NULL
+LIMIT
+  500000&quot;
+
+hacker_news_raw &lt;- query_exec(sql, project = project, max_pages = Inf)</code></pre>
+<p>And then let’s clean the text and make a data frame containing only the text, plus an ID to identify each “document”, i.e., post.</p>
+<pre class="r"><code>library(stringr)
+
+hacker_news_text &lt;- hacker_news_raw %&gt;%
+    as_tibble() %&gt;%
+    mutate(title = na_if(title, &quot;&quot;),
+           text = coalesce(title, text)) %&gt;%
+    select(-title) %&gt;%
+    mutate(text = str_replace_all(text, &quot;&amp;#x27;|&amp;quot;|&amp;#x2F;&quot;, &quot;&#39;&quot;),   ## weird encoding
+           text = str_replace_all(text, &quot;&lt;a(.*?)&gt;&quot;, &quot; &quot;),               ## links 
+           text = str_replace_all(text, &quot;&amp;gt;|&amp;lt;|&amp;amp;&quot;, &quot; &quot;),        ## html yuck
+           text = str_replace_all(text, &quot;&amp;#[:digit:]+;&quot;, &quot; &quot;),          ## html yuck
+           text = str_replace_all(text, &quot;&lt;[^&gt;]*&gt;&quot;, &quot; &quot;),                ## mmmmm, more html yuck
+           postID = row_number())</code></pre>
+<div id="sliding-windows" class="section level2">
+<h2>Sliding windows</h2>
+<p>Starting from here is where my approach has changed a bit. Instead of using the <code>unnest_tokens()</code> function a total of three times to find the skipgrams, here I only use <code>unnest_tokens()</code> once, and then use a function <code>slide_windows()</code> to identify the skipgram windows.</p>
+<pre class="r"><code>slide_windows &lt;- function(tbl, doc_var, window_size) {
+    # each word gets a skipgram (window_size words) starting on the first
+    # e.g. skipgram 1 starts on word 1, skipgram 2 starts on word 2
+    
+    each_total &lt;- tbl %&gt;% 
+        group_by(!!doc_var) %&gt;% 
+        mutate(doc_total = n(),
+               each_total = pmin(doc_total, window_size, na.rm = TRUE)) %&gt;%
+        pull(each_total)
+    
+    rle_each &lt;- rle(each_total)
+    counts &lt;- rle_each[[&quot;lengths&quot;]]
+    counts[rle_each$values != window_size] &lt;- 1
+    
+    # each word get a skipgram window, starting on the first
+    # account for documents shorter than window
+    id_counts &lt;- rep(rle_each$values, counts)
+    window_id &lt;- rep(seq_along(id_counts), id_counts)
+
+    
+    # within each skipgram, there are window_size many offsets
+    indexer &lt;- (seq_along(rle_each[[&quot;values&quot;]]) - 1) %&gt;%
+        map2(rle_each[[&quot;values&quot;]] - 1,
+             ~ seq.int(.x, .x + .y)) %&gt;% 
+        map2(counts, ~ rep(.x, .y)) %&gt;%
+        flatten_int() +
+        window_id
+    
+    tbl[indexer, ] %&gt;%
+        bind_cols(data_frame(window_id)) %&gt;%
+        group_by(window_id) %&gt;%
+        filter(n_distinct(!!doc_var) == 1) %&gt;%
+        ungroup
+}</code></pre>
+<p>This allows us to get to a tidy data frame with <a href="https://en.wikipedia.org/wiki/Pointwise_mutual_information">PMI values</a> for each pair of words. This PMI value is what tells us whether words likely to occur together or unlikely to occur together. I also was smarter and put the <code>filter()</code> to remove very rare words before trying to identifying skipgrams. In this example, a word has to be used 20 times (overall, in the 500,000 posts) to be included.</p>
+<pre class="r"><code>library(tidytext)
+library(widyr)
+
+tidy_pmi &lt;- hacker_news_text %&gt;%
+    unnest_tokens(word, text) %&gt;%
+    add_count(word) %&gt;%
+    filter(n &gt;= 20) %&gt;%
+    select(-n) %&gt;%
+    slide_windows(quo(postID), 8) %&gt;%
+    pairwise_pmi(word, window_id)
+
+tidy_pmi</code></pre>
+<pre><code>## # A tibble: 30,853,734 x 3
+##    item1 item2     pmi
+##    &lt;chr&gt; &lt;chr&gt;   &lt;dbl&gt;
+##  1 best  the    0.732 
+##  2 part  the    0.501 
+##  3 is    the    0.0365
+##  4 that  the   -0.145 
+##  5 since the   -0.0260
+##  6 it&#39;s  the   -0.364 
+##  7 not   the   -0.262 
+##  8 in    the    0.184 
+##  9 any   the   -0.643 
+## 10 fonts the   -0.140 
+## # ... with 30,853,724 more rows</code></pre>
+<p>This was the part of the blog posts where I hoped to wow everyone with a dramatic speed improvement, but it is a more modest one. Based on my benchmarking, this approach is 10% faster than the approach of my previous blog post. Identifying all the skipgram windows is a pretty expensive process. If you want a real-world estimate, it takes my computer about 7 minutes to complete this step.</p>
+<p>We can then find the word vectors from the PMI values using the new <a href="https://github.com/dgrtwo/widyr/blob/master/R/widely_svd.R"><code>widely_svd()</code></a> function in widyr. This is much faster compared to the other step.</p>
+<pre class="r"><code>tidy_word_vectors &lt;- tidy_pmi %&gt;%
+    widely_svd(item1, item2, pmi, nv = 256, maxit = 1000)</code></pre>
+</div>
+<div id="exploring-results" class="section level2">
+<h2>Exploring results</h2>
+<p>So hooray! We have found word vectors again, a bit faster, with clearer and easier-to-understand code. I do argue that this is a real benefit of this approach; it’s based on counting, dividing, and matrix decomposition and is thus much easier to understand and implement than anything with a neural network. And the results?</p>
+<pre class="r"><code>nearest_synonyms &lt;- function(df, token) {
+    df %&gt;%
+        widely(~ . %*% (.[token, ]), sort = TRUE)(item1, dimension, value) %&gt;%
+        select(-item2)
+}
+
+tidy_word_vectors %&gt;%
+    nearest_synonyms(&quot;tokyo&quot;)</code></pre>
+<pre><code>## # A tibble: 27,267 x 2
+##    item1       value
+##    &lt;chr&gt;       &lt;dbl&gt;
+##  1 tokyo     0.0197 
+##  2 hong      0.0145 
+##  3 london    0.0144 
+##  4 kong      0.0141 
+##  5 paris     0.0140 
+##  6 cities    0.0101 
+##  7 japan     0.0100 
+##  8 singapore 0.00952
+##  9 los       0.00899
+## 10 san       0.00860
+## # ... with 27,257 more rows</code></pre>
+<pre class="r"><code>tidy_word_vectors %&gt;%
+    nearest_synonyms(&quot;python&quot;)</code></pre>
+<pre><code>## # A tibble: 27,267 x 2
+##    item1       value
+##    &lt;chr&gt;       &lt;dbl&gt;
+##  1 python     0.0533
+##  2 ruby       0.0309
+##  3 java       0.0250
+##  4 php        0.0241
+##  5 c          0.0229
+##  6 perl       0.0222
+##  7 javascript 0.0203
+##  8 django     0.0202
+##  9 libraries  0.0184
+## 10 languages  0.0180
+## # ... with 27,257 more rows</code></pre>
+<pre class="r"><code>tidy_word_vectors %&gt;%
+    nearest_synonyms(&quot;bitcoin&quot;)</code></pre>
+<pre><code>## # A tibble: 27,267 x 2
+##    item1         value
+##    &lt;chr&gt;         &lt;dbl&gt;
+##  1 bitcoin      0.0626
+##  2 currency     0.0328
+##  3 btc          0.0320
+##  4 coins        0.0300
+##  5 blockchain   0.0285
+##  6 bitcoins     0.0258
+##  7 mining       0.0252
+##  8 transactions 0.0241
+##  9 transaction  0.0235
+## 10 currencies   0.0228
+## # ... with 27,257 more rows</code></pre>
+<pre class="r"><code>tidy_word_vectors %&gt;%
+    nearest_synonyms(&quot;women&quot;)</code></pre>
+<pre><code>## # A tibble: 27,267 x 2
+##    item1   value
+##    &lt;chr&gt;   &lt;dbl&gt;
+##  1 women  0.0648
+##  2 men    0.0508
+##  3 male   0.0345
+##  4 female 0.0319
+##  5 gender 0.0274
+##  6 sex    0.0256
+##  7 woman  0.0241
+##  8 sexual 0.0226
+##  9 males  0.0197
+## 10 girls  0.0195
+## # ... with 27,257 more rows</code></pre>
+<p>I’m still learning about how word vectors are evaluated to be able to make some kind claim about how good word vectors like these are, for realistic datasets. One way that word vectors can be evaluated is by looking at how well the vectors perform on analogy tasks, like <code>King - Man + Woman = Queen</code>. What are some analogies we can find in this Hacker News corpus? Let’s write a little function that will find the answer to <code>token1 - token2 + token 3 = ???</code>.</p>
+<pre class="r"><code>analogy &lt;- function(df, token1, token2, token3) {
+    df %&gt;%
+        widely(~ . %*% (.[token1, ] - .[token2, ] + .[token3, ]), sort = TRUE)(item1, dimension, value) %&gt;%
+        select(-item2)
+    
+}
+
+## operating systems
+tidy_word_vectors %&gt;%
+    analogy(&quot;osx&quot;, &quot;apple&quot;, &quot;microsoft&quot;)</code></pre>
+<pre><code>## # A tibble: 27,267 x 2
+##    item1      value
+##    &lt;chr&gt;      &lt;dbl&gt;
+##  1 windows   0.0357
+##  2 microsoft 0.0281
+##  3 ms        0.0245
+##  4 visual    0.0195
+##  5 linux     0.0188
+##  6 studio    0.0178
+##  7 net       0.0171
+##  8 desktop   0.0164
+##  9 xp        0.0163
+## 10 office    0.0147
+## # ... with 27,257 more rows</code></pre>
+<pre class="r"><code>## countries
+tidy_word_vectors %&gt;%
+    analogy(&quot;germany&quot;, &quot;berlin&quot;, &quot;paris&quot;)</code></pre>
+<pre><code>## # A tibble: 27,267 x 2
+##    item1      value
+##    &lt;chr&gt;      &lt;dbl&gt;
+##  1 germany   0.0320
+##  2 france    0.0231
+##  3 europe    0.0213
+##  4 paris     0.0212
+##  5 uk        0.0200
+##  6 london    0.0178
+##  7 eu        0.0176
+##  8 spain     0.0175
+##  9 italy     0.0170
+## 10 countries 0.0163
+## # ... with 27,257 more rows</code></pre>
+<pre class="r"><code>## THOUGHT LEADERS
+tidy_word_vectors %&gt;%
+    analogy(&quot;gates&quot;, &quot;windows&quot;, &quot;tesla&quot;)</code></pre>
+<pre><code>## # A tibble: 27,267 x 2
+##    item1     value
+##    &lt;chr&gt;     &lt;dbl&gt;
+##  1 tesla    0.0419
+##  2 gates    0.0364
+##  3 musk     0.0348
+##  4 elon     0.0335
+##  5 steve    0.0247
+##  6 electric 0.0234
+##  7 car      0.0234
+##  8 ford     0.0228
+##  9 larry    0.0222
+## 10 bill     0.0219
+## # ... with 27,257 more rows</code></pre>
+<p>Well, those last two are not perfect as the answers I’d identify as best are near the top but below the input tokens. This happens when I have trained vectors using GloVe too, though.</p>
+<p>Since we have done a singular value decomposition, we can use our word vectors to understand what principal components explain the most variation in the Hacker News corpus.</p>
+<pre class="r"><code>tidy_word_vectors %&gt;%
+    filter(dimension &lt;= 24) %&gt;%
+    group_by(dimension) %&gt;%
+    top_n(12, abs(value)) %&gt;%
+    ungroup %&gt;%
+    mutate(item1 = reorder(item1, value)) %&gt;%
+    group_by(dimension, item1) %&gt;%
+    arrange(desc(value)) %&gt;%
+    ungroup %&gt;%
+    mutate(item1 = factor(paste(item1, dimension, sep = &quot;__&quot;), 
+                         levels = rev(paste(item1, dimension, sep = &quot;__&quot;))),
+           dimension = factor(paste0(&quot;Dimension &quot;, dimension),
+                              levels = paste0(&quot;Dimension &quot;, as.factor(1:24)))) %&gt;%
+    ggplot(aes(item1, value, fill = dimension)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~dimension, scales = &quot;free_y&quot;, ncol = 4) +
+    scale_x_discrete(labels = function(x) gsub(&quot;__.+$&quot;, &quot;&quot;, x)) +
+    coord_flip() +
+    labs(x = NULL, y = &quot;Value&quot;,
+         title = &quot;First 24 principal components of the Hacker News corpus&quot;,
+         subtitle = &quot;Top words contributing to the components that explain the most variation&quot;)</code></pre>
+<p><img src="/blog/2017/2017-11-27-word-vectors-take-two_files/figure-html/pca-1.png" width="1440" /></p>
+<p>This is so great. The first two components contain mostly general purpose English words; remember that these are the vectors that explain the most variation in posts. Does a post contain a lot of these words or not? Then the third component and beyond start to contain more technical or topical words. Dimension 6 is about energy and markets, Dimension 11 is about geopolitics, Dimension 14 is about health discussions, Dimension 16 is about various kinds of people including kids/children/men/women/etc, and so on.</p>
+</div>
+<div id="the-end" class="section level2">
+<h2>The End</h2>
+<p>I’m happy to have made a modest improvement in speed here, and to use some new functions from <a href="https://github.com/dgrtwo/widyr">widyr</a> that improve the intuition and understanding around this workflow. This approach allows practitioners to find word vectors with such low overhead (dependency <em>and</em> mental overhead), and I am excited to keep working on it.</p>
+</div>

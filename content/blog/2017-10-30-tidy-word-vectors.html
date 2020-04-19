@@ -1,0 +1,309 @@
+---
+title: "Word Vectors with tidy data principles"
+date: 2017-10-30
+slug: "tidy-word-vectors"
+tags: [rstats]
+---
+
+
+
+<p>Last week I saw Chris Moody’s <a href="http://multithreaded.stitchfix.com/blog/2017/10/18/stop-using-word2vec/">post on the Stitch Fix blog</a> about calculating word vectors from a corpus of text using word counts and matrix factorization, and I was so excited! This blog post illustrates how to implement that approach to find word vector representations in R using tidy data principles and sparse matrices.</p>
+<p>Word vectors, or word embeddings, are typically calculated using neural networks; that is what <a href="https://en.wikipedia.org/wiki/Word2vec">word2vec</a> is. (<a href="https://nlp.stanford.edu/projects/glove/">GloVe embeddings</a> are trained a little differently than word2vec.) By contrast, the approach from Chris’s post that I’m implementing here uses only counting and some linear algebra. Deep learning is great, but I am super excited about this approach because it allows practitioners to find word vectors for their own collections of text (no need to rely on pre-trained vectors) using familiar techniques that are not difficult to understand. And it doesn’t take too long computationally!</p>
+<div id="getting-some-data" class="section level2">
+<h2>Getting some data</h2>
+<p>Let’s download half a million observations from… the <a href="https://cloud.google.com/bigquery/public-data/hacker-news">Hacker News corpus</a>.</p>
+<iframe src="https://giphy.com/embed/uwZhzLqlV0cZq" width="480" height="354" frameBorder="0" class="giphy-embed" allowFullScreen>
+</iframe>
+<p>
+<a href="https://giphy.com/gifs/buster-keaton-uwZhzLqlV0cZq">via GIPHY</a>
+</p>
+<p>I know, right? But it’s the dataset that Chris uses in his blog post and it gives me an opportunity to use the <a href="https://cran.r-project.org/package=bigrquery">bigrquery</a> package for the first time.</p>
+<pre class="r"><code>library(bigrquery)
+library(tidyverse)
+
+project &lt;- &quot;my-first-project-184003&quot;
+
+sql &lt;- &quot;#legacySQL
+SELECT
+  stories.title AS title,
+  stories.text AS text
+FROM
+  [bigquery-public-data:hacker_news.full] AS stories
+WHERE
+  stories.deleted IS NULL
+LIMIT
+  500000&quot;
+
+hacker_news_raw &lt;- query_exec(sql, project = project, max_pages = Inf)</code></pre>
+<p>Next, let’s clean this text up to take care of some of the messy ways it has gotten encoded.</p>
+<pre class="r"><code>library(stringr)
+
+hacker_news_text &lt;- hacker_news_raw %&gt;%
+    as_tibble() %&gt;%
+    mutate(title = na_if(title, &quot;&quot;),
+           text = coalesce(title, text)) %&gt;%
+    select(-title) %&gt;%
+    mutate(text = str_replace_all(text, &quot;&amp;quot;|&amp;#x2F;&quot;, &quot;&#39;&quot;),    ## hex encoding
+           text = str_replace_all(text, &quot;&amp;#x2F;&quot;, &quot;/&quot;),           ## more hex
+           text = str_replace_all(text, &quot;&lt;a(.*?)&gt;&quot;, &quot; &quot;),         ## links 
+           text = str_replace_all(text, &quot;&amp;gt;|&amp;lt;&quot;, &quot; &quot;),        ## html yuck
+           text = str_replace_all(text, &quot;&lt;[^&gt;]*&gt;&quot;, &quot; &quot;),          ## mmmmm, more html yuck
+           postID = row_number())</code></pre>
+</div>
+<div id="unigram-probabilities" class="section level2">
+<h2>Unigram probabilities</h2>
+<p>First, let’s calculate the unigram probabilities, how often we see each word in this corpus. This is straightforward using <code>unnest_tokens()</code> from the <a href="https://github.com/juliasilge/tidytext">tidytext</a> package and then just <code>count()</code> and <code>mutate()</code> from dplyr.</p>
+<pre class="r"><code>library(tidytext)
+
+unigram_probs &lt;- hacker_news_text %&gt;%
+    unnest_tokens(word, text) %&gt;%
+    count(word, sort = TRUE) %&gt;%
+    mutate(p = n / sum(n))
+
+unigram_probs</code></pre>
+<pre><code>## # A tibble: 314,615 x 3
+##     word       n          p
+##    &lt;chr&gt;   &lt;int&gt;      &lt;dbl&gt;
+##  1   the 1101051 0.04059959
+##  2    to  761660 0.02808506
+##  3     a  669142 0.02467360
+##  4    of  541939 0.01998318
+##  5   and  532594 0.01963860
+##  6     i  464917 0.01714311
+##  7   x27  437330 0.01612588
+##  8    is  431849 0.01592378
+##  9  that  429755 0.01584657
+## 10    it  402667 0.01484774
+## # ... with 314,605 more rows</code></pre>
+</div>
+<div id="skipgram-probabilities" class="section level2">
+<h2>Skipgram probabilities</h2>
+<p>Next, we need to calculate the skipgram probabilities, how often we find each word near each other word. We do this by defining a fixed-size moving window that centers around each word. Do we see <code>word1</code> and <code>word2</code> together within this window? I take the approach here of using <code>unnest_tokens()</code> once with <code>token = &quot;ngrams&quot;</code> to find all the windows I need, then using <code>unnest_tokens()</code> again to tidy these n-grams. After that, I can use <code>pairwise_count()</code> from the <a href="https://github.com/dgrtwo/widyr">widyr</a> package to count up cooccuring pairs within each n-gram/sliding window.</p>
+<p>I’m not sure what the ideal value for window size is here for the skipgrams. This value determines the sliding window that we move through the text, counting up bigrams that we find within the window. When this window is bigger, the process of counting skipgrams takes longer, obviously. I experimented a bit and windows of 8 words seem to work pretty well. Probably more work needed here! I’d be happy to be pointed to more resources on this topic.</p>
+<p>Finding all the skipgrams is a computationally expensive part of this process. Not something that just runs instantly!</p>
+<pre class="r"><code>library(widyr)
+
+tidy_skipgrams &lt;- hacker_news_text %&gt;%
+    unnest_tokens(ngram, text, token = &quot;ngrams&quot;, n = 8) %&gt;%
+    mutate(ngramID = row_number()) %&gt;% 
+    unite(skipgramID, postID, ngramID) %&gt;%
+    unnest_tokens(word, ngram)
+
+tidy_skipgrams</code></pre>
+<pre><code>## # A tibble: 190,151,488 x 2
+##    skipgramID   word
+##         &lt;chr&gt;  &lt;chr&gt;
+##  1        1_1      i
+##  2        1_1    bet
+##  3        1_1 taking
+##  4        1_1      a
+##  5        1_1    few
+##  6        1_1 months
+##  7        1_1    off
+##  8        1_1   from
+##  9        1_2    bet
+## 10        1_2 taking
+## # ... with 190,151,478 more rows</code></pre>
+<pre class="r"><code>skipgram_probs &lt;- tidy_skipgrams %&gt;%
+    pairwise_count(word, skipgramID, diag = TRUE, sort = TRUE) %&gt;%
+    mutate(p = n / sum(n))</code></pre>
+</div>
+<div id="normalized-skipgram-probability" class="section level2">
+<h2>Normalized skipgram probability</h2>
+<p>We now know how often words occur on their own, and how often words occur together with other words. We can calculate which words occurred together more often than expected based on how often they occurred on their own. When this number is high (greater than 1), the two words are associated with each other, likely to occur together. When this number is low (less than 1), the two words are not associated with each other, unlikely to occur together.</p>
+<pre class="r"><code>normalized_prob &lt;- skipgram_probs %&gt;%
+    filter(n &gt; 20) %&gt;%
+    rename(word1 = item1, word2 = item2) %&gt;%
+    left_join(unigram_probs %&gt;%
+                  select(word1 = word, p1 = p),
+              by = &quot;word1&quot;) %&gt;%
+    left_join(unigram_probs %&gt;%
+                  select(word2 = word, p2 = p),
+              by = &quot;word2&quot;) %&gt;%
+    mutate(p_together = p / p1 / p2)</code></pre>
+<p>What are the words most associated with Facebook on Hacker News?</p>
+<pre class="r"><code>normalized_prob %&gt;% 
+    filter(word1 == &quot;facebook&quot;) %&gt;%
+    arrange(-p_together)</code></pre>
+<pre><code>## # A tibble: 1,767 x 7
+##       word1            word2     n            p           p1           p2 p_together
+##       &lt;chr&gt;            &lt;chr&gt; &lt;dbl&gt;        &lt;dbl&gt;        &lt;dbl&gt;        &lt;dbl&gt;      &lt;dbl&gt;
+##  1 facebook         facebook 54505 3.737944e-05 0.0003310502 3.310502e-04  341.07126
+##  2 facebook        messenger   364 2.496306e-07 0.0003310502 1.098830e-05   68.62360
+##  3 facebook         statuses    40 2.743194e-08 0.0003310502 1.474940e-06   56.18086
+##  4 facebook       zuckerburg    23 1.577336e-08 0.0003310502 8.480903e-07   56.18086
+##  5 facebook          myspace   327 2.242561e-07 0.0003310502 1.290572e-05   52.48898
+##  6 facebook         newsfeed    32 2.194555e-08 0.0003310502 1.327446e-06   49.93854
+##  7 facebook           hiphop    29 1.988815e-08 0.0003310502 1.438066e-06   41.77551
+##  8 facebook     mashable.com    25 1.714496e-08 0.0003310502 1.253699e-06   41.30946
+##  9 facebook            gtalk    22 1.508757e-08 0.0003310502 1.216825e-06   37.45391
+## 10 facebook www.facebook.com    47 3.223253e-08 0.0003310502 2.765512e-06   35.20667
+## # ... with 1,757 more rows</code></pre>
+<p>What about the programming language Scala?</p>
+<pre class="r"><code>normalized_prob %&gt;% 
+    filter(word1 == &quot;scala&quot;) %&gt;%
+    arrange(-p_together)</code></pre>
+<pre><code>## # A tibble: 453 x 7
+##    word1        word2     n            p           p1           p2 p_together
+##    &lt;chr&gt;        &lt;chr&gt; &lt;dbl&gt;        &lt;dbl&gt;        &lt;dbl&gt;        &lt;dbl&gt;      &lt;dbl&gt;
+##  1 scala        scala  9418 6.458850e-06 5.394592e-05 5.394592e-05 2219.41246
+##  2 scala      odersky    54 3.703312e-08 5.394592e-05 1.216825e-06  564.16154
+##  3 scala          sbt    36 2.468874e-08 5.394592e-05 1.401193e-06  326.61984
+##  4 scala         akka    74 5.074908e-08 5.394592e-05 2.913006e-06  322.94479
+##  5 scala       groovy    88 6.035026e-08 5.394592e-05 5.494150e-06  203.61983
+##  6 scala           mu    23 1.577336e-08 5.394592e-05 1.769928e-06  165.20008
+##  7 scala       kotlin    88 6.035026e-08 5.394592e-05 7.448445e-06  150.19482
+##  8 scala constructors    23 1.577336e-08 5.394592e-05 2.728638e-06  107.15681
+##  9 scala      clojure   475 3.257543e-07 5.394592e-05 5.678518e-05  106.33997
+## 10 scala    idiomatic    53 3.634732e-08 5.394592e-05 7.337825e-06   91.82194
+## # ... with 443 more rows</code></pre>
+<p>Looks good!</p>
+</div>
+<div id="cast-to-a-sparse-matrix" class="section level2">
+<h2>Cast to a sparse matrix</h2>
+<p>We want to do matrix factorization, so we should probably make a matrix. We can use <code>cast_sparse()</code> from the tidytext package to transform our tidy data frame to a matrix.</p>
+<pre class="r"><code>pmi_matrix &lt;- normalized_prob %&gt;%
+    mutate(pmi = log10(p_together)) %&gt;%
+    cast_sparse(word1, word2, pmi)</code></pre>
+<p>What is the type of this object?</p>
+<pre class="r"><code>class(pmi_matrix)</code></pre>
+<pre><code>## [1] &quot;dgCMatrix&quot;
+## attr(,&quot;package&quot;)
+## [1] &quot;Matrix&quot;</code></pre>
+<p>The <code>dgCMatrix</code> class is a class of sparse numeric matrices in R. Text data like this represented in matrix form usually has lots and lots of zeroes, so we want to make use of sparse data structures to save us time and memory and all that.</p>
+</div>
+<div id="reduce-the-matrix-dimensionality" class="section level2">
+<h2>Reduce the matrix dimensionality</h2>
+<p>We want to get information out of this giant matrix in a more useful form, so it’s time for singular value decomposition. Since we have a sparse matrix, we don’t want to use base R’s <code>svd</code> function, which casts the input to a plain old matrix (not sparse) first thing. Instead we will use the fast SVD algorithm for sparse matrices in the <a href="https://cran.r-project.org/package=irlba">irlba</a> package.</p>
+<pre class="r"><code>library(irlba)
+
+pmi_svd &lt;- irlba(pmi_matrix, 256, maxit = 1e3)</code></pre>
+<p>The number 256 here means that we are finding 256-dimensional vectors for the words. This is another thing that I am not sure exactly what the best number is, but it will be easy to experiment with. Doing the matrix factorization is another part of this process that is a bit time intensive, but certainly not slow compared to training word2vec on a big corpus. In my experimenting here, it takes less time than counting up the skipgrams.</p>
+<p>Once we have the singular value decomposition, we can get out the word vectors! Let’s set some row names, using our input, so we can find out what is what.</p>
+<pre class="r"><code>word_vectors &lt;- pmi_svd$u
+rownames(word_vectors) &lt;- rownames(pmi_matrix)</code></pre>
+<p>Now we can search our matrix of word vectors to find synonyms. I want to get back to a tidy data structure at this point, so I’ll write a new little function for tidying.</p>
+<pre class="r"><code>library(broom)
+
+search_synonyms &lt;- function(word_vectors, selected_vector) {
+    
+    similarities &lt;- word_vectors %*% selected_vector %&gt;%
+        tidy() %&gt;%
+        as_tibble() %&gt;%
+        rename(token = .rownames,
+               similarity = unrowname.x.)
+    
+    similarities %&gt;%
+        arrange(-similarity)    
+}
+
+facebook &lt;- search_synonyms(word_vectors, word_vectors[&quot;facebook&quot;,])
+facebook</code></pre>
+<pre><code>## # A tibble: 68,664 x 2
+##        token similarity
+##        &lt;chr&gt;      &lt;dbl&gt;
+##  1  facebook 0.07622816
+##  2   twitter 0.05477529
+##  3    google 0.04833987
+##  4    social 0.04367801
+##  5        fb 0.03597795
+##  6   account 0.03304327
+##  7 instagram 0.02955428
+##  8     users 0.02581671
+##  9    photos 0.02502522
+## 10   friends 0.02412458
+## # ... with 68,654 more rows</code></pre>
+<pre class="r"><code>haskell &lt;- search_synonyms(word_vectors, word_vectors[&quot;haskell&quot;,])
+haskell</code></pre>
+<pre><code>## # A tibble: 68,664 x 2
+##          token similarity
+##          &lt;chr&gt;      &lt;dbl&gt;
+##  1     haskell 0.04100067
+##  2        lisp 0.03796378
+##  3   languages 0.03710574
+##  4    language 0.03176253
+##  5  functional 0.03022514
+##  6 programming 0.02743172
+##  7       scala 0.02667198
+##  8     clojure 0.02652761
+##  9      python 0.02462822
+## 10      erlang 0.02452040
+## # ... with 68,654 more rows</code></pre>
+<p>That’s… pretty darn amazing. Let’s visualize the most similar words vector to Facebook and Haskell from this dataset of Hacker News posts.</p>
+<pre class="r"><code>facebook %&gt;%
+    mutate(selected = &quot;facebook&quot;) %&gt;%
+    bind_rows(haskell %&gt;%
+                  mutate(selected = &quot;haskell&quot;)) %&gt;%
+    group_by(selected) %&gt;%
+    top_n(15, similarity) %&gt;%
+    ungroup %&gt;%
+    mutate(token = reorder(token, similarity)) %&gt;%
+    ggplot(aes(token, similarity, fill = selected)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~selected, scales = &quot;free&quot;) +
+    coord_flip() +
+    theme(strip.text=element_text(hjust=0, family=&quot;Roboto-Bold&quot;, size=12)) +
+    scale_y_continuous(expand = c(0,0)) +
+    labs(x = NULL, title = &quot;What word vectors are most similar to Facebook or Haskell?&quot;,
+         subtitle = &quot;Based on the Hacker News corpus, calculated using counts and matrix factorization&quot;)</code></pre>
+<p><img src="/blog/2017/2017-10-30-tidy-word-vectors_files/figure-html/vectors_plot-1.png" width="1440" /></p>
+<p>We can also do the familiar <strong>WORD MATH</strong> that is so fun with the output of word2vec; you have probably seen examples such as <code>King - Man + Woman = Queen</code> and such. We can just add and subtract our word vectors, and then search the matrix we built!</p>
+<p>If the iPhone is an important product associated with Apple, as discussed on Hacker News, what is an important product associated with Microsoft?</p>
+<pre class="r"><code>mystery_product &lt;- word_vectors[&quot;iphone&quot;,] - word_vectors[&quot;apple&quot;,] + word_vectors[&quot;microsoft&quot;,]
+search_synonyms(word_vectors, mystery_product)</code></pre>
+<pre><code>## # A tibble: 68,664 x 2
+##        token similarity
+##        &lt;chr&gt;      &lt;dbl&gt;
+##  1   windows 0.03861497
+##  2     phone 0.02818951
+##  3    iphone 0.02444977
+##  4    mobile 0.02427238
+##  5   android 0.02321326
+##  6 microsoft 0.02233597
+##  7       ios 0.02138345
+##  8    office 0.02000720
+##  9         7 0.01997405
+## 10         8 0.01970687
+## # ... with 68,654 more rows</code></pre>
+<p>We even see some mobile phone and Android terms in this list, below Windows.</p>
+<p>What about an important product associated with Google?</p>
+<pre class="r"><code>mystery_product &lt;- word_vectors[&quot;iphone&quot;,] - word_vectors[&quot;apple&quot;,] + word_vectors[&quot;google&quot;,]
+search_synonyms(word_vectors, mystery_product)</code></pre>
+<pre><code>## # A tibble: 68,664 x 2
+##       token similarity
+##       &lt;chr&gt;      &lt;dbl&gt;
+##  1   google 0.10194467
+##  2   search 0.05937512
+##  3    phone 0.03947618
+##  4      app 0.03716764
+##  5   engine 0.03590006
+##  6 facebook 0.03513982
+##  7  android 0.03289141
+##  8        q 0.02998453
+##  9    gmail 0.02980005
+## 10    using 0.02944208
+## # ... with 68,654 more rows</code></pre>
+<p>Google itself is at the top of the list, which is something that often happens to me when I try this word vector arithmetic no matter how I train them (usually one of the positive vectors in the “equation”). Does anyone know what that means? Anyway, “search”, is next on the list.</p>
+<pre class="r"><code>mystery_product &lt;- word_vectors[&quot;iphone&quot;,] - word_vectors[&quot;apple&quot;,] + word_vectors[&quot;amazon&quot;,]
+search_synonyms(word_vectors, mystery_product)</code></pre>
+<pre><code>## # A tibble: 68,664 x 2
+##      token similarity
+##      &lt;chr&gt;      &lt;dbl&gt;
+##  1  amazon 0.04757609
+##  2     aws 0.04389115
+##  3      s3 0.03356846
+##  4    book 0.03273032
+##  5     ec2 0.03151250
+##  6   cloud 0.03083856
+##  7   books 0.03008677
+##  8  iphone 0.02749843
+##  9 storage 0.02549876
+## 10  kindle 0.02505824
+## # ... with 68,654 more rows</code></pre>
+<p>For Amazon, we get AWS, S3, and EC2, as well as book. Nice!</p>
+</div>
+<div id="the-end" class="section level2">
+<h2>The End</h2>
+<p>I am so excited about this approach! Like Chris said in his blog post, for all the applications in the kind of work I do (non-academic, industry NLP) these type of word vectors will work <em>great</em>. No need for neural networks! This approach is still not lightning fast (I have to sit and wait for parts of it to run) but I can easily implement it with the tools I am familiar with. I would imagine there are vast swaths of data science practitioners for whom this is also true. I am considering the idea of bundling some of these types of functions up into an R package, and Dave has just built a <a href="https://github.com/dgrtwo/widyr/commit/e297c547a1599e48bd3afd23fead6bd01310253a"><code>pairwise_pmi()</code> function in the development version of widyr that simplifies this approach even more</a>. Tidy word vectors, perhaps? Maybe I’ll also look into the <a href="http://multithreaded.stitchfix.com/blog/2017/10/25/word-tensors/">higher rank extension of this technique</a> to get at word and document vectors!</p>
+<p>Let me know if you have feedback or questions.</p>
+</div>

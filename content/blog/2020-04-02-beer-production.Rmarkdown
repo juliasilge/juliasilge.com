@@ -1,0 +1,152 @@
+---
+title: "Bootstrap resampling with #TidyTuesday beer production data"
+date: 2020-04-02
+slug: "beer-production"
+tags: [rstats,tidymodels]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+I've been publishing [screencasts](https://juliasilge.com/tags/tidymodels/) demonstrating how to use the tidymodels framework, from first steps in modeling to how to tune more complex models. Today, I'm using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on beer production to show how to use bootstrap resampling to estimate model parameters.
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "7LGR1sEUXoI")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal here is to estimate how much **sugar** beer producers use relative to **malt** according to the [#TidyTuesday dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-03-31/readme.md). We'll use bootstrap resampling to do this! `r emo::ji("beers")`
+
+First, let's look at the data on brewing materials.
+
+```{r}
+library(tidyverse)
+
+brewing_materials_raw <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-03-31/brewing_materials.csv')
+
+brewing_materials_raw %>%
+    count(type, wt = month_current, sort = TRUE)
+```
+
+How have some different brewing materials changed over time?
+
+```{r}
+brewing_filtered <- brewing_materials_raw %>%
+    filter(type %in% c("Malt and malt products",
+                       "Sugar and syrups",
+                       "Hops (dry)"),
+           year < 2016,
+           !(month == 12 & year %in% 2014:2015)) %>%
+    mutate(date = paste0(year, "-", month, "-01"),
+           date = lubridate::ymd(date)) 
+
+brewing_filtered %>%
+    ggplot(aes(date, month_current, color = type)) +
+    geom_point()
+```
+
+There are strong annual patterns in these materials. We want to measure how much sugar beer producers use relative to malt.
+
+```{r}
+brewing_materials <- brewing_filtered %>%
+    select(date, type, month_current) %>%
+    pivot_wider(names_from = type,
+                values_from = month_current) %>%
+    janitor::clean_names()
+
+brewing_materials
+
+brewing_materials %>%
+    ggplot(aes(malt_and_malt_products, sugar_and_syrups)) +
+    geom_smooth(method = "lm") +
+    geom_point()
+```
+
+There is a lot of variation in this relationship, but beer reproducers use more sugar when they use more malt. What is the relationship?
+
+```{r}
+library(tidymodels)
+
+beer_fit <- lm(sugar_and_syrups ~ 0 + malt_and_malt_products, 
+               data = brewing_materials)
+
+summary(beer_fit)
+
+tidy(beer_fit)
+```
+
+Here I am choosing to set the intercept to zero to take a simplified view of the malt-sugar relationship (i.e., beer producers don't use any sugar if they aren't starting with malt). We could leave that off and estimate both an intercept (baseline use of sugar all the time) and slope (increase in use of sugar per barrel of malt).
+
+This model and the visualization above are based on model assumptions that may not hold with our real-world beer production data. Bootstrap resampling provides predictions and confidence intervals that are more robust.
+
+## Bootstrap resampling
+
+First, let's create a set of bootstrap resamples.
+
+```{r}
+set.seed(123)
+beer_boot <- bootstraps(brewing_materials, times = 1e3, apparent = TRUE)
+beer_boot
+```
+
+Next, let's train a model to each of these bootstrap resamples. We can use `tidy()` with `map()` to create a dataframe of model results.
+
+```{r}
+beer_models <- beer_boot %>%
+    mutate(model = map(splits, ~ lm(sugar_and_syrups ~ 0 + malt_and_malt_products, data = .)),
+           coef_info = map(model, tidy))
+
+beer_coefs <- beer_models %>% 
+    unnest(coef_info)
+
+beer_coefs
+```
+
+## Evaluate results
+
+What is the distribution of the relationship between sugar and malt?
+
+```{r}
+beer_coefs %>%
+    ggplot(aes(estimate)) +
+    geom_histogram(alpha = 0.7, fill = "cyan3")
+```
+
+We can see where this distribution is centered and how broad it is from this visualization, and we can  estimate these quantities using `int_pctl()` from the rsample package.
+
+```{r}
+int_pctl(beer_models, coef_info)
+```
+
+We can also visualize some of these fits to the bootstrap resamples. First, let's use `augment()` to get the fitted values for each resampled data point.
+
+```{r}
+beer_aug <- beer_models %>% 
+  sample_n(200) %>% 
+  mutate(augmented = map(model, augment)) %>% 
+  unnest(augmented)
+
+beer_aug
+```
+
+Then, let's create a visualization.
+
+```{r}
+ggplot(beer_aug, aes(malt_and_malt_products, sugar_and_syrups)) +
+  geom_line(aes(y = .fitted, group = id), alpha = .2, col = "cyan3") +
+  geom_point()
+```
+

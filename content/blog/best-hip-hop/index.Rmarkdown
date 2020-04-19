@@ -1,0 +1,254 @@
+---
+title: "PCA and the #TidyTuesday best hip hop songs ever"
+date: 2020-04-14
+slug: "best-hip-hop"
+tags: [rstats,tidymodels]
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+Lately I've been publishing [screencasts](https://juliasilge.com/tags/tidymodels/) demonstrating how to use the tidymodels framework, from first steps in modeling to how to tune more complex models. Today, I'm exploring a different part of the tidymodels framework; I'm showing how to implement principal component analysis via recipes with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on the best hip hop songs of all time as determinded by a BBC poll of music critics.
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "OvgzIx5mDNM")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal here is to understand what kind of songs are more highly rated by music critics in the [#TidyTuesday dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-04-14/readme.md) on hip hop songs. We'll use principal component analysis and audio features available in the Spotify API to do this! `r emo::ji("musical_note")`
+
+First, let's look at the data on the rankings.
+
+```{r}
+library(tidyverse)
+
+rankings <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-14/rankings.csv')
+
+rankings
+```
+
+As a first step, let's recreate the plot from the [source material](https://blog.datawrapper.de/best-hip-hop-songs-of-all-time-visualized/), but adjusted a bit.
+
+```{r}
+rankings %>%
+    ggplot(aes(year, points, color = gender)) +
+    geom_jitter(alpha = 0.7) +
+    scale_y_log10() +
+    labs(y = "Critic rating",
+         x = NULL,
+         color = NULL)
+```
+
+To see more examples of EDA for this dataset, you can see the great work [that folks share on Twitter](https://twitter.com/hashtag/tidytuesday)! `r emo::ji("sparkles")` Next, let's get audio features from the Spotify API. 
+
+## Get audio features
+
+Spotify makes a [set of "audio features" available](https://developer.spotify.com/documentation/web-api/reference/tracks/get-audio-features/) in its API. This includes features like whether the song is in a major or minor key, the liveness, the instrumentalness, the danceability, and many others. One option to work with these songs would be to get them all at once via a [playlist that Tom Mock made](https://open.spotify.com/playlist/7esD007S7kzeSwVtcH9GFe?si=IHkRIwQoRjqYijDTmAURxQ).
+
+```{r}
+library(spotifyr)
+access_token <- get_spotify_access_token()
+
+playlist_features <- get_playlist_audio_features("tmock1923", "7esD007S7kzeSwVtcH9GFe")
+
+playlist_features
+```
+
+This would be perfect for exploring the audio features on their own. On the other hand, this is going to be pretty difficult to match up to the songs in the `rankings` dataset because both the titles and artists are significantly different, so let's take a different approach. Let's create a little function to find the Spotify track identifier via `search_spotify()` (Spotify has already handled search pretty well) and use `purrr::map()` to apply it to all the songs we have in our dataset.
+
+```{r}
+pull_id <- function(query) {
+    search_spotify(query, "track") %>% 
+        arrange(-popularity) %>% 
+        filter(row_number() == 1) %>% 
+        pull(id)
+}
+
+ranking_ids <- rankings %>% 
+    mutate(search_query = paste(title, artist),
+           search_query = str_to_lower(search_query),
+           search_query = str_remove(search_query, "ft.*$")) %>%
+    mutate(id = map_chr(search_query, possibly(pull_id, NA_character_)))
+
+ranking_ids %>%
+    select(title, artist, id)
+```
+
+At the end of that, there are `r scales::percent(mean(is.na(ranking_ids$id)))` of songs that I failed to find a Spotify track identifier for. Not too bad!
+
+Now that we have the track identifiers, we can get the audio features. The function `get_track_audio_features()` can only take 100 tracks at most at once, so let's divide up our tracks into smaller chunks and then `map()` through them.
+
+```{r}
+ranking_features <- ranking_ids %>%
+    mutate(id_group = row_number() %/% 80) %>%
+    select(id_group, id) %>%
+    nest(data = c(id)) %>%
+    mutate(audio_features = map(data, ~get_track_audio_features(.$id)))
+
+ranking_features
+```
+
+We have audio features! `r emo::ji("tada")` Now let's put that together with the rankings and create a dataframe for modeling.
+
+```{r}
+ranking_df <- ranking_ids %>%
+    bind_cols(ranking_features %>% 
+                  select(audio_features) %>% 
+                  unnest(audio_features)) %>%
+    select(title, artist, points, year, danceability:tempo) %>%
+    na.omit()
+
+ranking_df    
+```
+
+How are these quantities correlated with each other?
+
+```{r fig.width=10}
+library(corrr)
+
+ranking_df %>%
+    select(year:tempo) %>%
+    correlate() %>%
+    rearrange() %>%
+    shave() %>%
+    rplot(shape = 15, colours = c("darkorange", "white", "darkcyan")) +
+    theme_plex()
+```
+
+Louder songs have higher energy, and older songs tend to be more danceable and have higher valence (i.e. be more "happy").
+
+Let's train a linear model on these audio features.
+
+```{r}
+ranking_lm <- ranking_df %>%
+    select(-title, -artist) %>%
+    lm(log(points) ~ ., data = .)
+
+summary(ranking_lm)
+```
+
+We only have evidence for year being important in the critic ratings from this model. We know that some of the features are at least a bit correlated, though, so let's use PCA.
+
+## Principal component analysis
+
+We can use the [recipes](https://tidymodels.github.io/recipes/) package to implement PCA in tidymodels.
+
+```{r}
+library(tidymodels)
+
+ranking_rec <- recipe(points ~ ., data = ranking_df) %>%
+    update_role(title, artist, new_role = "id") %>%
+    step_log(points) %>%
+    step_normalize(all_predictors()) %>%
+    step_pca(all_predictors())
+
+ranking_prep <- prep(ranking_rec)
+
+ranking_prep
+```
+
+Let's walk through the steps in this recipe.
+
+- First, we must tell the `recipe()` what our model is going to be (using a formula here) and what data we are using.
+- Next, we update the role for title and artist, since these are variables we want to keep around for convenience as identifiers for rows but are not a predictor or outcome.
+- Next, we take the log of the outcome (`points`, the critic ratings).
+- We need to center and scale the numeric predictors, because we are about to implement PCA.
+- Finally, we use `step_pca()` for the actual principal component analysis.
+
+Before using `prep()` these steps have been defined but not actually run or implemented. The `prep()` function is where everything gets evaluated.
+
+Once we have that done, we can both explore the results of the PCA and then eventually use it in a model. Let's start with checking out how the PCA turned out. We can `tidy()` any of our recipe steps, including the PCA step, which is the third step. Then let's make a visualization to see what the components look like.
+
+```{r, fig.width=6, fig.height=8}
+tidied_pca <- tidy(ranking_prep, 3)
+
+tidied_pca %>%
+    mutate(component = fct_inorder(component)) %>%
+    ggplot(aes(value, terms, fill = terms)) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~component) +
+    labs(y = NULL)
+```
+
+Let's zoom in on the first four components.
+
+```{r}
+library(tidytext)
+
+tidied_pca %>%
+    filter(component %in% c("PC1", "PC2", "PC3", "PC4")) %>%
+    group_by(component) %>%
+    top_n(6, abs(value)) %>%
+    ungroup %>%
+    mutate(terms = reorder_within(terms, abs(value), component)) %>%
+    ggplot(aes(abs(value), terms, fill = value > 0)) +
+    geom_col() +
+    facet_wrap(~component, scales = "free_y") +
+    scale_y_reordered() +
+    labs(x = "Absolute value of contribution",
+         y = NULL, fill = "Positive?")
+```
+
+So PC1 is mostly about age and danceability, PC2 is mostly energy and loudness, PC3 is mostly speechiness, and PC4 is about the musical characteristics (actual key and major vs. minor key).
+
+How are the songs distributed in the plane of the first two components?
+
+```{r, fig.width=10, fig.height=8}
+juice(ranking_prep) %>%
+    ggplot(aes(PC1, PC2, label = title)) +
+    geom_point(alpha = 0.2) +
+    geom_text(check_overlap = TRUE, family = "IBMPlexSans")
+```
+
+- Older, more danceable songs are to the left.
+- Higher energy, louder songs are towards the top.
+
+You can change out `PC2` for `PC3`, for example, to instead see where more "speechy" songs are.
+
+How much variation are we capturing?
+
+```{r}
+sdev <- ranking_prep$steps[[3]]$res$sdev
+
+percent_variation <- sdev^2 / sum(sdev^2)
+
+tibble(
+    component = unique(tidied_pca$component),
+    percent_var = percent_variation       ## use cumsum() to find cumulative, if you prefer
+) %>%         
+    mutate(component = fct_inorder(component)) %>%
+    ggplot(aes(component, percent_variation)) +
+    geom_col() +
+    scale_y_continuous(labels = scales::percent_format()) +
+    labs(x = NULL, y = "Percent variance explained by each PCA component")
+```
+
+
+And finally, let's fit the same kind of model we fit before, but now with `juice(ranking_prep)`. This approach really emphasizes how recipes can be used for data preprocessing. Notice how `juice(ranking_prep)` has already taken the log of `points`, has the component values ready to go, etc.
+
+```{r}
+juice(ranking_prep)
+
+pca_fit <- juice(ranking_prep) %>%
+    select(-title, -artist) %>%
+    lm(points ~ ., data = .)
+
+summary(pca_fit)
+```
+
+
+So what did we find? There is some evidence here that older, more danceable, higher valence songs (PC1) were rated higher by critics.
+

@@ -1,0 +1,171 @@
+---
+title: "tidytext 0.1.6"
+date: 2018-01-10
+slug: "tidytext-0-1-6"
+tags: [rstats]
+---
+
+
+
+<p>I am pleased to announce that <a href="https://cran.r-project.org/package=tidytext">tidytext 0.1.6</a> is now on CRAN!</p>
+<p>Most of this release, as well as the 0.1.5 release which I did not blog about, was for maintenance, updates to align with API changes from tidytext’s dependencies, and bugs. I just spent a good chunk of effort getting tidytext to pass R CMD check <a href="https://github.com/juliasilge/tidytext/blob/ef722210b9ad80e306badd0c5a866a320a37d9b4/.travis.yml#L11">on older versions of R</a> despite the fact that some of the packages in tidytext’s <a href="https://github.com/juliasilge/tidytext/blob/ef722210b9ad80e306badd0c5a866a320a37d9b4/DESCRIPTION#L28">Suggests</a> require recent versions of R. FUN TIMES. I was glad to get it working, though, because I know that we have users, some teaching on university campuses, etc, who are constrained to older versions of R in various environments.</p>
+<p>There are some more interesting updates. For example, did you know about the new-ish <a href="https://cran.r-project.org/package=stopwords">stopwords</a> package? This package provides access to stopword lists from multiple sources in multiple languages. If you would like to access these in a list data structure, go to the original package. But if you like your text tidy, I GOT YOU.</p>
+<pre class="r"><code>library(tidytext)
+
+get_stopwords()</code></pre>
+<pre><code>## # A tibble: 175 x 2
+##    word      lexicon 
+##    &lt;chr&gt;     &lt;chr&gt;   
+##  1 i         snowball
+##  2 me        snowball
+##  3 my        snowball
+##  4 myself    snowball
+##  5 we        snowball
+##  6 our       snowball
+##  7 ours      snowball
+##  8 ourselves snowball
+##  9 you       snowball
+## 10 your      snowball
+## # ... with 165 more rows</code></pre>
+<pre class="r"><code>get_stopwords(source = &quot;smart&quot;)</code></pre>
+<pre><code>## # A tibble: 571 x 2
+##    word        lexicon
+##    &lt;chr&gt;       &lt;chr&gt;  
+##  1 a           smart  
+##  2 a&#39;s         smart  
+##  3 able        smart  
+##  4 about       smart  
+##  5 above       smart  
+##  6 according   smart  
+##  7 accordingly smart  
+##  8 across      smart  
+##  9 actually    smart  
+## 10 after       smart  
+## # ... with 561 more rows</code></pre>
+<pre class="r"><code>get_stopwords(language = &quot;ru&quot;)</code></pre>
+<pre><code>## # A tibble: 159 x 2
+##    word  lexicon 
+##    &lt;chr&gt; &lt;chr&gt;   
+##  1 и     snowball
+##  2 в     snowball
+##  3 во    snowball
+##  4 не    snowball
+##  5 что   snowball
+##  6 он    snowball
+##  7 на    snowball
+##  8 я     snowball
+##  9 с     snowball
+## 10 со    snowball
+## # ... with 149 more rows</code></pre>
+<pre class="r"><code>get_stopwords(language = &quot;it&quot;)</code></pre>
+<pre><code>## # A tibble: 279 x 2
+##    word  lexicon 
+##    &lt;chr&gt; &lt;chr&gt;   
+##  1 ad    snowball
+##  2 al    snowball
+##  3 allo  snowball
+##  4 ai    snowball
+##  5 agli  snowball
+##  6 all   snowball
+##  7 agl   snowball
+##  8 alla  snowball
+##  9 alle  snowball
+## 10 con   snowball
+## # ... with 269 more rows</code></pre>
+<p>This allows users to implement text mining tasks using tidy data principles that have been difficult before now. What if we would like to find the most common words in, say, <a href="http://www.gutenberg.org/ebooks/author/846">Rainer Maria Rilke’s work</a>, but <strong>in the original German</strong>?</p>
+<pre class="r"><code>library(gutenbergr)
+library(tidyverse)
+
+raw_rilke &lt;- gutenberg_download(c(24288, 33863, 2188, 34521),
+                                meta_fields = &quot;title&quot;) %&gt;%
+    mutate(text = iconv(text, from = &quot;latin-9&quot;, to = &quot;UTF-8&quot;))
+
+tidy_rilke &lt;- raw_rilke %&gt;%
+    unnest_tokens(word, text) %&gt;%
+    count(title, word, sort = TRUE) %&gt;%
+    anti_join(get_stopwords(language = &quot;de&quot;))
+
+tidy_rilke</code></pre>
+<pre><code>## # A tibble: 18,698 x 3
+##    title                                       word       n
+##    &lt;chr&gt;                                       &lt;chr&gt;  &lt;int&gt;
+##  1 Die Aufzeichnungen des Malte Laurids Brigge immer    160
+##  2 Die Aufzeichnungen des Malte Laurids Brigge ganz     155
+##  3 Die Aufzeichnungen des Malte Laurids Brigge mehr     140
+##  4 Die Aufzeichnungen des Malte Laurids Brigge konnte   132
+##  5 Die Aufzeichnungen des Malte Laurids Brigge kam      123
+##  6 Die Aufzeichnungen des Malte Laurids Brigge zeit     120
+##  7 Die Aufzeichnungen des Malte Laurids Brigge schon    119
+##  8 Die Aufzeichnungen des Malte Laurids Brigge sah      101
+##  9 Die Aufzeichnungen des Malte Laurids Brigge hätte     97
+## 10 Die Aufzeichnungen des Malte Laurids Brigge wäre      95
+## # ... with 18,688 more rows</code></pre>
+<pre class="r"><code>tidy_rilke %&gt;%
+    group_by(title) %&gt;%
+    top_n(12) %&gt;%
+    ungroup %&gt;%
+    mutate(word = reorder(word, n),
+           title = factor(title,
+                          levels = c(&quot;Das Stunden-Buch&quot;,
+                                     &quot;Das Buch der Bilder&quot;,
+                                     &quot;Neue Gedichte&quot;,
+                                     &quot;Die Aufzeichnungen des Malte Laurids Brigge&quot;))) %&gt;%
+    group_by(title, word) %&gt;%    
+    arrange(desc(n)) %&gt;%  
+    ungroup() %&gt;%
+    mutate(word = factor(paste(word, title, sep = &quot;__&quot;), 
+                         levels = rev(paste(word, title, sep = &quot;__&quot;)))) %&gt;%
+    ggplot(aes(word, n, fill = title)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    coord_flip() +
+    facet_wrap(~title, scales = &quot;free&quot;) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_discrete(labels = function(x) gsub(&quot;__.+$&quot;, &quot;&quot;, x)) +
+    labs(x = NULL, y = &quot;Number of uses in each book&quot;,
+         title = &quot;Word use in the poetry of Rainer Maria Rilke&quot;,
+         subtitle = &quot;The most common words after stopword removal&quot;)</code></pre>
+<p><img src="/blog/2018/2018-01-10-tidytext-0-1-6_files/figure-html/unnamed-chunk-3-1.png" width="1530" /></p>
+<p>The first three works here are poetry (<em>The Book of Hours</em>, <em>The Book of Images</em>, and <em>New Poems</em>) while the last is a book of prose (<em>The Notebooks of Malte Laurids Brigge</em>). We can see the different themes and word use here, even just by counting up word frequencies. Now, if I actually spoke German fluently, I know this would mean more to me, but even to my English-speaking eyes, we can see meaningful trends. These are all still quite common words (the Snowball stopword lists are not terribly large) but some of these works are more religious (God, life) and some more focused on narrating events, and so forth.</p>
+<p>Another addition in this release is a dataset of negators, modals, and adverbs (only in English). These are words that can affect sentiment analysis, either by intensifying words or negating them.</p>
+<pre class="r"><code>nma_words %&gt;%
+    count(modifier)</code></pre>
+<pre><code>## # A tibble: 3 x 2
+##   modifier     n
+##   &lt;chr&gt;    &lt;int&gt;
+## 1 adverb      22
+## 2 modal        7
+## 3 negator     15</code></pre>
+<p>You can read more <a href="http://saifmohammad.com/WebPages/SCL.html#NMA">from Saif Mohammad</a> about how these kinds of words can affect sentiment analysis. One of the reasons that tidy data principles are so well suited to text mining is that you can interrogate sentiment scores and get at questions like these quite naturally. I talk about this in <a href="https://www.datacamp.com/courses/sentiment-analysis-in-r-the-tidy-way">my DataCamp course</a>, and also you can read about this in our book, in the <a href="https://www.tidytextmining.com/ngrams.html">chapter on n-grams</a> and the <a href="https://www.tidytextmining.com/usenet.html">case study on Usenet messages</a>.</p>
+<p>For example, we can ask which words in Jane Austen’s novels are more likely to appear after these adverbs?</p>
+<pre class="r"><code>library(janeaustenr)
+
+adverbs &lt;- nma_words %&gt;%
+    filter(modifier == &quot;adverb&quot;) %&gt;%
+    pull(word)
+
+austen_bigrams &lt;- austen_books() %&gt;%
+    unnest_tokens(bigram, text, token = &quot;ngrams&quot;, n = 2) %&gt;%
+    count(bigram, sort = TRUE) %&gt;%
+    separate(bigram, c(&quot;word1&quot;, &quot;word2&quot;), sep = &quot; &quot;)
+
+austen_bigrams %&gt;%
+    filter(word1 %in% adverbs) %&gt;%
+    count(word1, word2, wt = n, sort = TRUE) %&gt;%
+    inner_join(get_sentiments(&quot;afinn&quot;), by = c(word2 = &quot;word&quot;)) %&gt;%
+    mutate(contribution = score * nn) %&gt;%
+    group_by(word1) %&gt;%
+    filter(n() &gt; 10) %&gt;%
+    top_n(10, abs(contribution)) %&gt;%
+    ungroup() %&gt;%
+    mutate(word2 = reorder(paste(word2, word1, sep = &quot;__&quot;), contribution)) %&gt;%
+    ggplot(aes(word2, contribution, fill = contribution &gt; 0)) +
+    geom_col(alpha = 0.8, show.legend = FALSE) +
+    facet_wrap(~ word1, scales = &quot;free&quot;, nrow = 3) +
+    scale_x_discrete(labels = function(x) gsub(&quot;__.+$&quot;, &quot;&quot;, x)) +
+    coord_flip() +
+    labs(x = NULL, y = &quot;Sentiment score * # of occurrences&quot;,
+         title = &quot;Words preceded by adverbs in Jane Austen&#39;s novels&quot;,
+         subtitle = &quot;Things are rather distressing but most agreeable&quot;)</code></pre>
+<p><img src="/blog/2018/2018-01-10-tidytext-0-1-6_files/figure-html/unnamed-chunk-5-1.png" width="2160" /></p>
+<p>Gosh, I love this A LOT because you can see really common Jane Austen word patterns here. Some people are extremely agreeable, but sometimes you can’t help but be highly incensed. I am <em>particularly</em> fond of this kind of text mining.</p>
+<p>To see any more details of how to use tidytext functions, you can check out the documentation, vignettes, and news for tidytext at our <a href="http://juliasilge.github.io/tidytext/">package website</a>. Let me know if you have questions!</p>

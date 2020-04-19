@@ -1,0 +1,532 @@
+---
+title: "Training, evaluating, and interpreting topic models"
+date: 2018-09-08
+slug: "evaluating-stm"
+tags: [rstats]
+---
+
+
+
+<p>At the beginning of this year, I wrote a blog post about how to get started with the <a href="https://juliasilge.com/blog/sherlock-holmes-stm/">stm and tidytext packages for topic modeling</a>. I have been doing more topic modeling in various projects, so I wanted to share some workflows I have found useful for</p>
+<ul>
+<li>training many topic models at one time,</li>
+<li>evaluating topic models and understanding model diagnostics, and</li>
+<li>exploring and interpreting the content of topic models.</li>
+</ul>
+<p>I’ve been doing all my topic modeling with <a href="http://www.structuraltopicmodel.com/">Structural Topic Models</a> and the <a href="https://cran.r-project.org/package=stm">stm</a> package lately, and it has been ✨GREAT✨. One thing I am not going to cover in this blog post is how to use document-level covariates in topic modeling, i.e., how to train a model with topics that can vary with some continuous or categorical characteristic of your documents. I hope to build up some posts about that, but in the meantime, you can check out the <a href="https://cran.r-project.org/web/packages/stm/vignettes/stmVignette.pdf">stm vignette</a> and perhaps <a href="https://github.com/methodds/stminsights">Carsten Schwemmer’s Shiny app</a> for more details on this.</p>
+<div id="modeling-the-hacker-news-corpus" class="section level2">
+<h2>Modeling the Hacker News corpus</h2>
+<p>In my last blog post, I demonstrated how to get started with about a book’s worth of text, which is a TEENY TINY amount of text for a topic model. This time around, I’d like to demonstrate how to go about interpreting results with a more realistic set of text, something more like what you might actually want to model topics with in the real world, so let’s turn to the <a href="https://cloud.google.com/bigquery/public-data/hacker-news">Hacker news corpus</a> and download 100,000 texts using the <a href="https://cran.r-project.org/package=bigrquery">bigrquery</a> package.</p>
+<pre class="r"><code>library(bigrquery)
+library(tidyverse)
+
+sql &lt;- &quot;#legacySQL
+SELECT
+  stories.title AS title,
+  stories.text AS text,
+FROM
+  [bigquery-public-data:hacker_news.full] AS stories
+WHERE
+  stories.deleted IS NULL
+LIMIT
+  100000&quot;
+
+hacker_news_raw &lt;- query_exec(sql, project = project, max_pages = Inf)</code></pre>
+<p>After we have the text downloaded, let’s clean the text and make a data frame containing only the text, plus an ID to identify each “document”, i.e., post.</p>
+<pre class="r"><code>hacker_news_text &lt;- hacker_news_raw %&gt;%
+  as_tibble() %&gt;%
+  mutate(title = na_if(title, &quot;&quot;),
+         text = coalesce(title, text)) %&gt;%
+  select(-title) %&gt;%
+  mutate(text = str_replace_all(text, &quot;&amp;#x27;|&amp;quot;|&amp;#x2F;&quot;, &quot;&#39;&quot;), ## weird encoding
+         text = str_replace_all(text, &quot;&lt;a(.*?)&gt;&quot;, &quot; &quot;),             ## links 
+         text = str_replace_all(text, &quot;&amp;gt;|&amp;lt;|&amp;amp;&quot;, &quot; &quot;),      ## html yuck
+         text = str_replace_all(text, &quot;&amp;#[:digit:]+;&quot;, &quot; &quot;),        ## html yuck
+         text = str_remove_all(text, &quot;&lt;[^&gt;]*&gt;&quot;),                    ## mmmmm, more html yuck
+         postID = row_number()) </code></pre>
+<p>Now it’s time to tokenize and tidy the text, remove some stop words (and numbers, although this is an analytical choice that you might want to try in a different way), and then cast to a sparse matrix. I’m using the <code>token = &quot;tweets&quot;</code> option for tokenizing because it often performs the most sensibly with text from online forums, such as Hacker News (and Stack Overflow, and Reddit, and so on). In my <a href="https://juliasilge.com/blog/sherlock-holmes-stm/">previous blog post</a>, I used a quanteda <code>dfm</code> as the input to the topic modeling algorithm, but here I’m using a plain old sparse matrix. Either one works.</p>
+<pre class="r"><code>library(tidytext)
+
+tidy_hacker_news &lt;- hacker_news_text %&gt;%
+  unnest_tokens(word, text, token = &quot;tweets&quot;) %&gt;%
+  anti_join(get_stopwords()) %&gt;%
+  filter(!str_detect(word, &quot;[0-9]+&quot;)) %&gt;%
+  add_count(word) %&gt;%
+  filter(n &gt; 100) %&gt;%
+  select(-n)
+
+hacker_news_sparse &lt;- tidy_hacker_news %&gt;%
+  count(postID, word) %&gt;%
+  cast_sparse(postID, word, n)</code></pre>
+</div>
+<div id="train-and-evaluate-topic-models" class="section level2">
+<h2>Train and evaluate topic models</h2>
+<p>Now it’s time to train some topic models! 💪 You can check out that <a href="https://juliasilge.com/blog/sherlock-holmes-stm/">previous blog post on stm</a> for some details on how to get started, but in this post, we’re going to go to the next level. We’re not going to train just one topic model, but a whole group of them, with different numbers of topics, and then evaluate these models. In topic modeling, like with k-means clustering, we don’t know ahead of time how many topics we should use, and research in this area says there is no “right” answer for the number of topics that is appropriate for any given corpus. Here, let’s try a number of different values for <span class="math inline">\(K\)</span> (the number of topics) from 20 to 100.</p>
+<p>With 100,000 texts this modeling takes a while 😩 so I have used I have used the <a href="https://github.com/DavisVaughan/furrr">furrr</a> package (and <a href="https://github.com/HenrikBengtsson/future">future</a>) for parallel processing.</p>
+<pre class="r"><code>library(stm)
+library(furrr)
+plan(multiprocess)
+
+many_models &lt;- data_frame(K = c(20, 40, 50, 60, 70, 80, 100)) %&gt;%
+  mutate(topic_model = future_map(K, ~stm(hacker_news_sparse, K = .,
+                                          verbose = FALSE)))</code></pre>
+<p>Now that we’ve fit all these topic models with different numbers of topics, we can explore how many topics are appropriate/good/“best”. The code below to find <code>k_result</code> is similar to stm’s own <a href="https://github.com/bstewart/stm/blob/master/R/searchK.R"><code>searchK()</code></a> function, but it allows you to evaluate models trained on a sparse matrix (or a quanteda <code>dfm</code>) instead of only stm’s corpus data structure, as well as to dig into the model diagnostics yourself in detail. Some of these functions were not originally flexible enough to take a sparse matrix or <code>dfm</code> as input, so I’d like to send huge thanks to Brandon Stewart, stm’s developer, for <a href="https://github.com/bstewart/stm/issues/134">adding this functionality</a>.</p>
+<pre class="r"><code>heldout &lt;- make.heldout(hacker_news_sparse)
+
+k_result &lt;- many_models %&gt;%
+  mutate(exclusivity = map(topic_model, exclusivity),
+         semantic_coherence = map(topic_model, semanticCoherence, hacker_news_sparse),
+         eval_heldout = map(topic_model, eval.heldout, heldout$missing),
+         residual = map(topic_model, checkResiduals, hacker_news_sparse),
+         bound =  map_dbl(topic_model, function(x) max(x$convergence$bound)),
+         lfact = map_dbl(topic_model, function(x) lfactorial(x$settings$dim$K)),
+         lbound = bound + lfact,
+         iterations = map_dbl(topic_model, function(x) length(x$convergence$bound)))
+
+k_result</code></pre>
+<pre><code>## # A tibble: 7 x 10
+##       K topic_model exclusivity semantic_coherence eval_heldout residual        bound lfact     lbound iterations
+##   &lt;dbl&gt; &lt;list&gt;      &lt;list&gt;      &lt;list&gt;             &lt;list&gt;       &lt;list&gt;          &lt;dbl&gt; &lt;dbl&gt;      &lt;dbl&gt;      &lt;dbl&gt;
+## 1    20 &lt;S3: STM&gt;   &lt;dbl [20]&gt;  &lt;dbl [20]&gt;         &lt;list [4]&gt;   &lt;list [3]&gt; -15991207.  42.3 -15991165.         19
+## 2    40 &lt;S3: STM&gt;   &lt;dbl [40]&gt;  &lt;dbl [40]&gt;         &lt;list [4]&gt;   &lt;list [3]&gt; -15990161. 110.  -15990051.         26
+## 3    50 &lt;S3: STM&gt;   &lt;dbl [50]&gt;  &lt;dbl [50]&gt;         &lt;list [4]&gt;   &lt;list [3]&gt; -15998161. 148.  -15998012.         30
+## 4    60 &lt;S3: STM&gt;   &lt;dbl [60]&gt;  &lt;dbl [60]&gt;         &lt;list [4]&gt;   &lt;list [3]&gt; -16014305. 189.  -16014117.         33
+## 5    70 &lt;S3: STM&gt;   &lt;dbl [70]&gt;  &lt;dbl [70]&gt;         &lt;list [4]&gt;   &lt;list [3]&gt; -16007921. 230.  -16007690.         41
+## 6    80 &lt;S3: STM&gt;   &lt;dbl [80]&gt;  &lt;dbl [80]&gt;         &lt;list [4]&gt;   &lt;list [3]&gt; -16018471. 274.  -16018197.         48
+## 7   100 &lt;S3: STM&gt;   &lt;dbl [100]&gt; &lt;dbl [100]&gt;        &lt;list [4]&gt;   &lt;list [3]&gt; -16003418. 364.  -16003055.        114</code></pre>
+<p>We’re evaluating things like the residuals, the <a href="https://dl.acm.org/citation.cfm?id=2145462">semantic coherence</a> of the topics, the likelihood for held-out datasets, and more. We can make some diagnostic plots using these quantities to understand how the models are performing at various numbers of topics. The following code makes a diagnostic plot similar to one that comes built in to the stm package.</p>
+<pre class="r"><code>k_result %&gt;%
+  transmute(K,
+            `Lower bound` = lbound,
+            Residuals = map_dbl(residual, &quot;dispersion&quot;),
+            `Semantic coherence` = map_dbl(semantic_coherence, mean),
+            `Held-out likelihood` = map_dbl(eval_heldout, &quot;expected.heldout&quot;)) %&gt;%
+  gather(Metric, Value, -K) %&gt;%
+  ggplot(aes(K, Value, color = Metric)) +
+  geom_line(size = 1.5, alpha = 0.7, show.legend = FALSE) +
+  facet_wrap(~Metric, scales = &quot;free_y&quot;) +
+  labs(x = &quot;K (number of topics)&quot;,
+       y = NULL,
+       title = &quot;Model diagnostics by number of topics&quot;,
+       subtitle = &quot;These diagnostics indicate that a good number of topics would be around 60&quot;)</code></pre>
+<p><img src="/blog/2018/2018-09-08-evaluating-stm_files/figure-html/model_diagnostic-1.png" width="2700" /></p>
+<p>The held-out likelihood is highest between 60 and 80, and the residuals are lowest around 60, so perhaps a good number of topics would be around there.</p>
+<p>Semantic coherence is maximized when the most probable words in a given topic frequently co-occur together, and it’s a metric that correlates well with human judgment of topic quality. Having high semantic coherence is relatively easy, though, if you only have a few topics dominated by very common words, so you want to look at both semantic coherence and exclusivity of words to topics. It’s a tradeoff. Read more about semantic coherence in the <a href="https://dl.acm.org/citation.cfm?id=2145462">original paper about it</a>.</p>
+<pre class="r"><code>k_result %&gt;%
+  select(K, exclusivity, semantic_coherence) %&gt;%
+  filter(K %in% c(20, 60, 100)) %&gt;%
+  unnest() %&gt;%
+  mutate(K = as.factor(K)) %&gt;%
+  ggplot(aes(semantic_coherence, exclusivity, color = K)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(x = &quot;Semantic coherence&quot;,
+       y = &quot;Exclusivity&quot;,
+       title = &quot;Comparing exclusivity and semantic coherence&quot;,
+       subtitle = &quot;Models with fewer topics have higher semantic coherence for more topics, but lower exclusivity&quot;)</code></pre>
+<p><img src="/blog/2018/2018-09-08-evaluating-stm_files/figure-html/coherence_exclusive-1.png" width="3000" /></p>
+<p>So for this analysis, it looks a good choice could be the model with <strong>60</strong> topics.</p>
+<pre class="r"><code>topic_model &lt;- k_result %&gt;% 
+  filter(K == 60) %&gt;% 
+  pull(topic_model) %&gt;% 
+  .[[1]]
+
+topic_model</code></pre>
+<pre><code>## A topic model with 60 topics, 98000 documents and a 3828 word dictionary.</code></pre>
+</div>
+<div id="explore-the-topic-model" class="section level2">
+<h2>Explore the topic model</h2>
+<p>We’ve trained topic models, evaluated them, and picked one to use, so now let’s see what this topic model tells us about the Hacker News corpus. In real life analysis, this process would be iterative, moving from exploring and interpreting a model back and forth to diagnostics and evaluation in order to decide how best to model a corpus. One of the reasons I embrace tidy data principles and tidy tools is that this iterative process is streamlined. For example, let’s <code>tidy()</code> the beta matrix for our topic model and look at the probabilities that each word is generated from each topic.</p>
+<pre class="r"><code>td_beta &lt;- tidy(topic_model)
+
+td_beta</code></pre>
+<pre><code>## # A tibble: 229,680 x 3
+##    topic term          beta
+##    &lt;int&gt; &lt;chr&gt;        &lt;dbl&gt;
+##  1     1 arguments 8.56e-20
+##  2     2 arguments 4.20e-15
+##  3     3 arguments 3.21e-15
+##  4     4 arguments 9.23e-13
+##  5     5 arguments 1.45e-12
+##  6     6 arguments 5.44e-18
+##  7     7 arguments 1.04e-24
+##  8     8 arguments 1.52e-11
+##  9     9 arguments 4.77e-16
+## 10    10 arguments 2.29e-16
+## # ... with 229,670 more rows</code></pre>
+<p>I’m also quite interested in the probabilities that each document is generated from each topic, that gamma matrix.</p>
+<pre class="r"><code>td_gamma &lt;- tidy(topic_model, matrix = &quot;gamma&quot;,
+                 document_names = rownames(hacker_news_sparse))
+
+td_gamma</code></pre>
+<pre><code>## # A tibble: 5,880,000 x 3
+##    document topic   gamma
+##    &lt;chr&gt;    &lt;int&gt;   &lt;dbl&gt;
+##  1 1            1 0.00631
+##  2 2            1 0.00446
+##  3 3            1 0.00670
+##  4 4            1 0.00767
+##  5 5            1 0.00742
+##  6 6            1 0.00907
+##  7 7            1 0.00479
+##  8 8            1 0.00906
+##  9 9            1 0.00801
+## 10 10           1 0.00881
+## # ... with 5,879,990 more rows</code></pre>
+<p>Let’s combine these to understand the topic prevalence in the Hacker News corpus, and which words contribute to each topic.</p>
+<pre class="r"><code>library(ggthemes)
+
+top_terms &lt;- td_beta %&gt;%
+  arrange(beta) %&gt;%
+  group_by(topic) %&gt;%
+  top_n(7, beta) %&gt;%
+  arrange(-beta) %&gt;%
+  select(topic, term) %&gt;%
+  summarise(terms = list(term)) %&gt;%
+  mutate(terms = map(terms, paste, collapse = &quot;, &quot;)) %&gt;% 
+  unnest()
+
+gamma_terms &lt;- td_gamma %&gt;%
+  group_by(topic) %&gt;%
+  summarise(gamma = mean(gamma)) %&gt;%
+  arrange(desc(gamma)) %&gt;%
+  left_join(top_terms, by = &quot;topic&quot;) %&gt;%
+  mutate(topic = paste0(&quot;Topic &quot;, topic),
+         topic = reorder(topic, gamma))
+
+gamma_terms %&gt;%
+  top_n(20, gamma) %&gt;%
+  ggplot(aes(topic, gamma, label = terms, fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(hjust = 0, nudge_y = 0.0005, size = 3,
+            family = &quot;IBMPlexSans&quot;) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0,0),
+                     limits = c(0, 0.09),
+                     labels = percent_format()) +
+  theme_tufte(base_family = &quot;IBMPlexSans&quot;, ticks = FALSE) +
+  theme(plot.title = element_text(size = 16,
+                                  family=&quot;IBMPlexSans-Bold&quot;),
+        plot.subtitle = element_text(size = 13)) +
+  labs(x = NULL, y = expression(gamma),
+       title = &quot;Top 20 topics by prevalence in the Hacker News corpus&quot;,
+       subtitle = &quot;With the top words that contribute to each topic&quot;)</code></pre>
+<p><img src="/blog/2018/2018-09-08-evaluating-stm_files/figure-html/gamma_terms-1.png" width="3600" /></p>
+<p>We can look at all the topics, ordered by prevalence.</p>
+<pre class="r"><code>gamma_terms %&gt;%
+  select(topic, gamma, terms) %&gt;%
+  kable(digits = 3, 
+        col.names = c(&quot;Topic&quot;, &quot;Expected topic proportion&quot;, &quot;Top 7 terms&quot;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Topic</th>
+<th align="right">Expected topic proportion</th>
+<th align="left">Top 7 terms</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Topic 28</td>
+<td align="right">0.067</td>
+<td align="left">like, really, good, something, thats, thing, well</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 44</td>
+<td align="right">0.050</td>
+<td align="left">people, dont, think, know, even, just, didnt</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 37</td>
+<td align="right">0.049</td>
+<td align="left">get, time, better, go, going, youre, probably</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 33</td>
+<td align="right">0.042</td>
+<td align="left">can, want, see, cant, find, someone, without</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 47</td>
+<td align="right">0.037</td>
+<td align="left">ive, never, got, interesting, always, thought, found</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 43</td>
+<td align="right">0.031</td>
+<td align="left">doesnt, say, mean, yes, agree, fact, exactly</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 40</td>
+<td align="right">0.028</td>
+<td align="left">use, using, used, need, works, instead, user</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 15</td>
+<td align="right">0.023</td>
+<td align="left">years, article, two, first, ago, days, started</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 10</td>
+<td align="right">0.023</td>
+<td align="left">one, problem, hard, another, issue, problems, needs</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 20</td>
+<td align="right">0.020</td>
+<td align="left">money, market, value, buy, price, worth, low</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 21</td>
+<td align="right">0.020</td>
+<td align="left">make, makes, made, making, trying, sense, easier</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 7</td>
+<td align="right">0.019</td>
+<td align="left">software, experience, project, build, working, looking, team</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 50</td>
+<td align="right">0.019</td>
+<td align="left">may, likely, side, certainly, author, risk, due</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 56</td>
+<td align="right">0.018</td>
+<td align="left">im, sure, facebook, account, personal, id, interested</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 19</td>
+<td align="right">0.018</td>
+<td align="left">important, design, computer, human, future, research, science</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 16</td>
+<td align="right">0.017</td>
+<td align="left">live, move, car, place, home, area, local</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 49</td>
+<td align="right">0.017</td>
+<td align="left">app, users, apple, apps, version, android, mobile</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 46</td>
+<td align="right">0.017</td>
+<td align="left">much, less, small, space, second, higher, size</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 52</td>
+<td align="right">0.017</td>
+<td align="left">right, now, comment, product, wasnt, quality, guess</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 18</td>
+<td align="right">0.016</td>
+<td align="left">us, government, country, countries, states, american, china</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 51</td>
+<td align="right">0.016</td>
+<td align="left">year, support, last, old, next, linux, per</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 17</td>
+<td align="right">0.015</td>
+<td align="left">language, programming, c, learn, python, languages, written</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 12</td>
+<td align="right">0.014</td>
+<td align="left">company, business, startup, name, ideas, early, employees</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 2</td>
+<td align="right">0.014</td>
+<td align="left">part, real, reason, life, story, guy, bitcoin</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 31</td>
+<td align="right">0.014</td>
+<td align="left">code, open, source, write, writing, test, program</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 22</td>
+<td align="right">0.014</td>
+<td align="left">pay, cost, paid, costs, paying, rate, amount</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 9</td>
+<td align="right">0.013</td>
+<td align="left">email, ask, show, best, link, please, form</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 54</td>
+<td align="right">0.013</td>
+<td align="left">system, large, control, systems, built, scale, require</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 55</td>
+<td align="right">0.013</td>
+<td align="left">wrong, nothing, page, difference, whats, theres, view</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 26</td>
+<td align="right">0.013</td>
+<td align="left">case, law, cases, nobody, wants, serious, laws</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 53</td>
+<td align="right">0.013</td>
+<td align="left">change, group, history, position, political, involved, individual</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 25</td>
+<td align="right">0.012</td>
+<td align="left">read, top, list, reading, add, news, books</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 11</td>
+<td align="right">0.012</td>
+<td align="left">google, internet, search, browser, ie, address, chrome</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 39</td>
+<td align="right">0.012</td>
+<td align="left">standard, eg, types, implementation, object, structure, table</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 42</td>
+<td align="right">0.012</td>
+<td align="left">new, create, technology, website, rules, existing, created</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 38</td>
+<td align="right">0.012</td>
+<td align="left">high, school, tax, average, poor, course, kids</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 30</td>
+<td align="right">0.012</td>
+<td align="left">run, running, server, api, application, client, database</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 35</td>
+<td align="right">0.012</td>
+<td align="left">data, information, public, access, private, analysis, details</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 48</td>
+<td align="right">0.012</td>
+<td align="left">line, available, video, tools, vs, basic, tool</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 24</td>
+<td align="right">0.012</td>
+<td align="left">different, true, model, definitely, yeah, left, completely</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 41</td>
+<td align="right">0.011</td>
+<td align="left">service, services, provide, customers, called, trust, customer</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 36</td>
+<td align="right">0.011</td>
+<td align="left">game, play, games, fun, sound, water, playing</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 34</td>
+<td align="right">0.011</td>
+<td align="left">almost, fast, extremely, field, speed, tend, theory</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 5</td>
+<td align="right">0.011</td>
+<td align="left">person, must, common, wonder, situation, along, net</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 29</td>
+<td align="right">0.011</td>
+<td align="left">example, type, call, result, function, lack, currently</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 59</td>
+<td align="right">0.011</td>
+<td align="left">number, phone, =, +, numbers, normal, random</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 60</td>
+<td align="right">0.011</td>
+<td align="left">also, just, still, already, well, way, least</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 14</td>
+<td align="right">0.011</td>
+<td align="left">free, windows, full, online, key, microsoft, offer</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 3</td>
+<td align="right">0.011</td>
+<td align="left">work, job, state, book, jobs, leave, hire</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 27</td>
+<td align="right">0.010</td>
+<td align="left">world, security, talking, rest, parts, seeing, changed</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 13</td>
+<td align="right">0.010</td>
+<td align="left">web, site, post, x, os, sites, blog</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 23</td>
+<td align="right">0.010</td>
+<td align="left">power, become, benefit, society, food, energy, cars</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 32</td>
+<td align="right">0.009</td>
+<td align="left">often, sometimes, word, ones, words, turn, context</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 1</td>
+<td align="right">0.009</td>
+<td align="left">question, level, whether, answer, questions, asked, asking</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 57</td>
+<td align="right">0.009</td>
+<td align="left">set, simple, default, complex, relatively, push, implement</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 6</td>
+<td align="right">0.009</td>
+<td align="left">big, companies, many, tech, deal, industry, huge</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 45</td>
+<td align="right">0.008</td>
+<td align="left">content, social, network, results, media, ads, ad</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 8</td>
+<td align="right">0.008</td>
+<td align="left">file, terms, legal, files, step, purpose, license</td>
+</tr>
+<tr class="odd">
+<td align="left">Topic 4</td>
+<td align="right">0.008</td>
+<td align="left">women, culture, age, men, young, people, older</td>
+</tr>
+<tr class="even">
+<td align="left">Topic 58</td>
+<td align="right">0.006</td>
+<td align="left">hn, community, light, others, reddit, come, hey</td>
+</tr>
+</tbody>
+</table>
+<p>We can see here that the first several topics are focused around general purpose English words in different categories of meaning. About 10 topics down, we see a topic about markets, money, and value. A bit below that, we see the first topic with explicitly technical-ish terms like software, build, and project. There is a topic that combined “make”, “makes”, “made”, and “making”. Notice that I did not stem these words before modeling. <a href="https://transacl.org/ojs/index.php/tacl/article/view/868">Research</a> shows that <a href="http://www.cs.cornell.edu/~xanda/winlp2017.pdf">stemming words when topic modeling doesn’t help and often hurts</a>, so don’t automatically assume that you should be stemming your words.</p>
+<p>So there you have it! We trained topic models at multiple values of <span class="math inline">\(K\)</span>, evaluated them, and then explored our model. Let me know if you have any questions or feedback!</p>
+</div>

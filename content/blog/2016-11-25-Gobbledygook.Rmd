@@ -1,0 +1,309 @@
+---
+title: "Measuring Gobbledygook"
+slug: "Gobbledygook"
+date: 2016-11-25
+excerpt: "Readability in text using tidy data principles"
+tags: [rstats]
+---
+
+```{r, echo = FALSE, warning = FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, dpi = 180)
+options(width=80, dplyr.width = 150)
+```
+
+In learning more about [text mining](http://tidytextmining.com/) over the past several months, one aspect of text that I've been interested in is readability. A text's readability measures how hard or easy it is for a reader to read and understand what a text is saying; it depends on how sentences are written, what words are chosen, and so forth. I first became really aware of readability scores of books through my kids' reading tracking websites for school, but it turns out there are [lots of frameworks for measuring readability](https://en.wikipedia.org/wiki/Readability#Popular_readability_formulas).
+
+One of the most commonly used ways to measure readability is a [SMOG](https://en.wikipedia.org/wiki/SMOG) grade, which stands for "Simple Measure of Gobbledygook". It may have a silly (SILLY WONDERFUL) name, but it is often considered the gold standard of readability formulas and performs well in many contexts. We calculate a SMOG score using the formula
+
+$$\text{SMOG} = 1.0430\sqrt{\frac{30n_{\text{polysyllables}}}{n_{\text{sentences}}}} + 3.1291$$
+
+where the number in the numerator measures the number of words with 3 or more syllables and the number in the denominator measures the number of sentences. You can see that SMOG is going to be higher for texts with a lot of words with many syllables in each sentence. These ratios are typically normalized to use a sample of 30 sentences, and then the SMOG grade is supposed to estimate the years of education needed to understand a text.
+
+This seems like it is perfectly suited to an analysis using tidy data principles, so let's use the [tidytext package](https://github.com/juliasilge/tidytext) to compare the readability of several texts.
+
+## Getting some texts to analyze
+
+Let's use the [gutenbergr package](https://github.com/ropenscilabs/gutenbergr) to obtain some book texts to compare. I want to compare:
+
+- [*Anne of Green Gables* by L. M. Montgomery](https://www.gutenberg.org/ebooks/45)
+- [*Little Women* by Louisa May Alcott](https://www.gutenberg.org/ebooks/514)
+- [*Pride and Prejudice* by Jane Austen](https://www.gutenberg.org/ebooks/42671) (I mean, DUH)
+- [*A Portrait of the Artist as a Young Man* by James Joyce](https://www.gutenberg.org/ebooks/4217)
+- [*Les Misérables* by Victor Hugo](https://www.gutenberg.org/ebooks/135)
+
+```{r}
+library(gutenbergr)
+books <- gutenberg_download(c(45, 514, 42671, 4217, 135),
+                            meta_fields = "title")
+```
+
+I really wanted to throw some Ernest Hemingway in there, but none of his works are on Project Gutenberg; I guess they are not public domain.
+
+## Tidying the text
+
+Now we have our texts in hand, and we need to do some data wrangling to get it in the form that we need. We are interested in counting two things here:
+
+- the number of sentences
+- the number of words with 3 or more syllables
+
+Let's start by working with the sentences. The `unnest_tokens` function in tidytext has an option to tokenize by sentences, but it can have trouble with UTF-8 encoded text, lots of dialogue, etc. We need to use `iconv` first on the UTF-8 text from Project Gutenberg before trying to tokenize by sentences. Also, we have three different books in this dataframe, so we need to `nest` and `map` so that we count sentences separately for each book; `unnest_tokens` will collapse all the text in a dataframe together before tokenizing by something like sentences, n-grams, etc.
+
+```{r}
+library(dplyr)
+library(tidytext)
+library(tidyr)
+library(purrr)
+
+tidybooks <- books %>%
+    mutate(text = iconv(text, to = 'latin1')) %>%
+    nest(-title) %>%
+    mutate(tidied = map(data, unnest_tokens, 'sentence', 'text', token = 'sentences'))
+```
+
+It still takes me a bit of thinking and experimenting every time I need to `nest` and `map`, but what a great way to do what I need! How did this work out?
+
+```{r}
+tidybooks
+```
+
+The `data` column contains the original untidied text and the `tidied` column contains the tidied text, organized with each sentence on its own row; both are list-columns. Now let's unnest this so we get rid of the list-columns and have sentences in their own rows.
+
+```{r}
+tidybooks <- tidybooks %>%
+    unnest(tidied)
+
+tidybooks
+```
+
+How did the sentence tokenizing do?
+
+```{r}
+tidybooks %>% 
+    sample_n(5) %>% 
+    select(sentence)
+```
+
+Pretty well! Especially considering the whole thing errors out without `iconv`.
+
+Now we know how to count the number of sentences in each book.
+
+```{r}
+tidybooks %>%
+    group_by(title) %>%
+    summarise(n_sentences = n_distinct(sentence))
+```
+
+There we go! An estimate of the number of sentences in each book.
+
+## Counting syllables
+
+The next thing we need to do here is count the syllables in each word so that we can find how many words in each book have more than 3 syllables. I did a bit of background checking on how this is done, and found [this implementation of syllable counting](http://lingtools.uoregon.edu/scripts/english_syllable_counter-102.R) by [Tyler Kendall](http://pages.uoregon.edu/tsk/) at the University of Oregon. It is actually an implementation in R of an algorithm originally written in PHP by Greg Fast, and it seems like a standard way people do this. It is estimated to have an error rate of ~15%, and is usually off by only one syllable when it is wrong.
+
+I'm including this function in a code chunk with `echo = FALSE` because it is really long and I didn't write it, but you can check out the [R Markdown file](https://github.com/juliasilge/juliasilge.github.io/blob/master/_R/2016-11-25-Gobbledygook.Rmd) that made this blog post to see the details.
+
+```{r, echo = FALSE}
+## ENGLISH_SYLLABLE_COUNT()
+## Version 1.02.  Tyler Kendall, June 10, 2014
+
+## This function counts the number of syllables in 'ortho'
+## Converted to R from SLAAP (http://ncslaap.lib.ncsu.edu/) version in PHP 
+## Originally based on Greg Fast's Lingua::EN::Syllable Perl Module
+## That had an error rate of ~15% (though almost all errors off by just one syllable)
+## This achieves close to 100% but will err on unusual words which are not
+## in the lists of exceptions.
+
+## Reference/Citation
+##   Kendall, Tyler (2013). Speech rate, pause, and language variation: Studies in corpus sociophonetics. Basingstoke, UK: Palgrave Macmillan. [ http://ncslaap.lib.ncsu.edu/speechrateandpause/ ]
+
+## Usage examples (first source this file) 
+##   english_syllable_count("Happy times are here again!") # == 7
+##   english_syllable_count(c("Happy", "times", "are", "here", "again!")) # == 7
+##   sapply(c("Happy", "times", "are", "here", "again!"), english_syllable_count) # == c(2, 1, 1, 1, 2) # with names
+
+count_syllables <- function(ortho) {
+    
+    # Can add words to these lists of 2 syllable and 3 syllable 'exceptions'
+    # Note that final -e is stripped before checking these lists!
+    Specials.2 <- c('every', 'different', 'family', 'girl', 'girls', 'world', 'worlds', 'bein', 'being', 'something', 'mkay', 'mayb')
+    Specials.3 <- c('anyon', 'everyon') # final -e is dropped	
+    
+    # Regular Expression exceptions
+    # SubSyl - remove a syllable from the count for each sub-string match
+    SubSyl <- c('cial',
+                'tia',
+                'cius',
+                'cious',
+                'giu',              # belgium!
+                'ion',
+                'iou',
+                '^every',           # every, but also everything, everybody
+                'sia$',
+                '.ely$',            # absolutely! (but not ely!)
+                '[^szaeiou]es$',    # fates, but not sasses
+                '[^tdaeiou]ed$',    # trapped, but not fated
+                '^ninet',           # nineteen, ninety
+                '^awe'				# awesome
+    )
+    
+    # AddSyl - add a syllable to the count for each sub-string match
+    AddSyl <- c('ia',
+                'rie[rt]',
+                'dien',
+                'ieth',
+                'iu',
+                'io',
+                'ii',
+                'ienc',	      # ambience, science, ...
+                'les?$',
+                '[aeiouym][bp]l$',  # -Vble, plus -mble and -Vple
+                '[aeiou]{3}',       # agreeable
+                'ndl(ed)?$',        # handle, handled
+                'mpl(ed)?$',	    # trample, trampled
+                '^mc',				# McEnery
+                'ism$',             # -isms
+                '([^aeiouy])\\1l(ed)?$',  # middle twiddle battle bottle, etc.
+                '[^l]lien',         # alien, salient [1]
+                '^coa[dglx].',      # [2]
+                '[^gq]ua[^aeiou]',  # i think this fixes more than it breaks
+                '[sd]nt$',          # couldn't, didn't, hasn't, wasn't,...
+                '\\wshes$',          # add one back for esh (since it's -'d)
+                '\\wches$',          #  and for affricate (witches)
+                '\\wges$',           #  and voiced (ages)
+                '\\wces$',	      #  and sibilant 'c's (places)
+                '\\w[aeiouy]ing[s]?$'   # vowels before -ing = hiatus
+    )
+    
+    tot_syls <- 0
+    ortho.l <- tolower(ortho)
+    stripchars <- "[:'\\[\\]]"
+    ortho.cl <- gsub(stripchars, "", ortho.l, perl=T)
+    spacechars <- "[\\W_]" # replace other non-word chars with space
+    ortho.cl <- gsub(spacechars, " ", ortho.cl, perl=T)
+    ortho.vec <- unlist(strsplit(ortho.cl, " ", perl=T))
+    ortho.vec <- ortho.vec[ortho.vec!=""]
+    for (w in ortho.vec) {
+        w <- gsub("e$", "", w, perl=T) # strip final -e
+        syl <- 0
+        # is word in the 2 syllable exception list?
+        if (w %in% Specials.2) {
+            syl <- 2
+            
+            # is word in the 3 syllable exception list?
+        } else if (w %in% Specials.3) {
+            syl <- 3
+            
+            # if not, than check the different parts...
+        } else {
+            for (pat in SubSyl) {
+                if (length(grep(pat, w, perl=T))>=1) 
+                    syl <- syl - 1
+            }
+            for (pat in AddSyl) {
+                if (length(grep(pat, w, perl=T))>=1) 
+                    syl <- syl + 1
+            }
+            if (nchar(w)==1) {
+                syl <- 1
+            } else {
+                chnk <- unlist(strsplit(w, "[^aeiouy:]+"))
+                chnk <- chnk[chnk!=""]
+                syl <- syl + length(chnk)
+                if (syl==0) syl <- 1
+            }
+        }
+        tot_syls <- tot_syls + syl
+    }
+    tot_syls
+}
+```
+
+Let's check out how it works!
+
+```{r}
+count_syllables("dog")
+count_syllables("science")
+count_syllables("couldn't")
+count_syllables("My name is Julia Silge.")
+```
+
+Well, my last name is actually two syllables, but most human beings get that wrong too, so there we go.
+
+Now let's start counting the syllables in all the words in our books. Let's use `unnest_tokens` again to extract all the single words from the sentences; this time we will set `drop = FALSE` so we keep the sentences for counting purposes. Let's add a new column that will count the syllables for each word. (This takes a bit to run on my fairly speedy/new desktop; that function for counting syllables is not built for speed.)
+
+```{r}
+tidybooks <- tidybooks %>%
+    unnest_tokens(word, sentence, drop = FALSE) %>%
+    rowwise() %>%
+    mutate(n_syllables = count_syllables(word)) %>%
+    ungroup()
+
+tidybooks %>%
+    select(word, n_syllables)
+```
+
+Let's check out the distributions of syllables for the three titles.
+
+```{r, fig.width=7, fig.height=5}
+library(ggplot2)
+ggplot(tidybooks, aes(n_syllables, fill = title, color = title)) +
+    geom_density(alpha = 0.1, size = 1.1, adjust = 9) +
+    theme_minimal(base_family = "RobotoCondensed-Regular") +
+    theme(plot.title=element_text(family="Roboto-Bold")) +
+    theme(legend.title=element_blank()) +
+    theme(legend.position = c(0.8, 0.8)) +
+    labs(x = "Number of syllables per word",
+         y = "Density",
+         title = "Comparing syllables per word across novels",
+         subtitle = "Jane Austen uses the lowest proportion of words with one syllable")
+```
+
+These distributions are pretty similar, but there are some moderate differences. *Little Women* and *Les Misérables* have the highest proportion of words with only one syllable, while *Pride and Prejudice* has the lowest proportion. This makes some sense, since Louisa May Alcott was writing for young readers while Jane Austen was not. *Les Misérables* was originally written in French and we are analyzing a translation here, so that is a complicating factor. James Joyce, with his moocows or whatever, is in the middle here.
+
+## Calculating SMOG
+
+Now we know both the number of sentences and the number of syllables in these books, so we can calculate... the gobbledygook! This will just end up being a bunch of dplyr operations.
+
+```{r}
+results <- left_join(tidybooks %>%
+                         group_by(title) %>%
+                         summarise(n_sentences = n_distinct(sentence)),
+                     tidybooks %>% 
+                         group_by(title) %>% 
+                         filter(n_syllables >= 3) %>% 
+                         summarise(n_polysyllables = n())) %>%
+    mutate(SMOG = 1.0430 * sqrt(30 * n_polysyllables/n_sentences) + 3.1291)
+
+results
+```
+
+L.M. Montgomery, writing here for an audience of young girls, has the lowest SMOG grade at around 9 (i.e., approximately beginning 9th grade level). *Pride and Prejudice* has the highest SMOG grade at 11.2, more than two years of education higher. I will say that throwing *A Portrait of the Artist as a Young Man* in here turned out to be an interesting choice; in reality, I find it to be practically unreadable but it has a readability score close to the same as *Little Women*. This measure of prose readability based only on number of sentences and number of words with lots of syllables doesn't measure what we might expect when applied to extremely stylized text.
+
+Let's visualize the readability scores for these five novels.
+
+```{r, fig.width=7, fig.height=3.5}
+library(ggstance)
+library(ggthemes)
+library(forcats)
+ggplot(results, aes(SMOG, fct_reorder(title, SMOG), fill = SMOG)) +
+    geom_barh(stat = "identity", alpha = 0.8) +
+    theme_tufte(base_family = "RobotoCondensed-Regular") +
+    geom_text(aes(x = 0.3, y = title, label = title), color="white",
+                  family="Roboto-Italic", size=3.5, hjust = 0) +
+    theme(plot.title=element_text(family="Roboto-Bold")) +
+    scale_fill_gradient(low = "darkslategray3", high = "turquoise4") +
+    theme(legend.position="none") +
+    theme(axis.ticks=element_blank()) +
+    scale_x_continuous(expand=c(0,0)) +
+    theme(axis.text.y=element_blank()) +
+    labs(y = NULL, x = "SMOG Grade",
+         title = "Comparing readability scores across novels",
+         subtitle = "Jane Austen's SMOG grade is highest, while L.M. Montgomery's is lowest")
+
+```
+
+
+## The End
+
+I would like to thank [Ben Heubl](https://benheubl.github.io/), a data journalist at *The Economist*, for interesting discussions that motivated this blog post. The R Markdown file used to make this blog post is available [here](https://github.com/juliasilge/juliasilge.github.io/blob/master/_R/2016-11-25-Gobbledygook.Rmd). I am very happy to hear feedback or questions!
+

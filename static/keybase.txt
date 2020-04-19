@@ -1,0 +1,56 @@
+==================================================================
+https://keybase.io/juliasilge
+--------------------------------------------------------------------
+
+I hereby claim:
+
+  * I am an admin of https://juliasilge.com
+  * I am juliasilge (https://keybase.io/juliasilge) on keybase.
+  * I have a public key ASDmuxcJrM55BGKWGxCENIRSHvzgkeXqhw61aiiVwcqMPQo
+
+To do so, I am signing this object:
+
+{
+  "body": {
+    "key": {
+      "eldest_kid": "012022dcf8c5baf7e1d073a7a9b49585a20f5e4479d0328b8dcaf2e3bc89170ee56a0a",
+      "host": "keybase.io",
+      "kid": "0120e6bb1709acce790462961b10843484521efce091e5ea870eb56a2895c1ca8c3d0a",
+      "uid": "c418056f9867f9db12fe24ffe843c019",
+      "username": "juliasilge"
+    },
+    "merkle_root": {
+      "ctime": 1557254288,
+      "hash": "af4f718652b4b3f2d7e0fb6ddf9380a957f5d85c188db30a222f71c6dacf4cb0142b59240d6ab332806f6c4e230ebce49e8afce14263be630183e60f24fcb340",
+      "hash_meta": "db3d3fc66783edb25653dabb46a13504c346d058d5b58ac14ffd28017c9111b5",
+      "seqno": 5323654
+    },
+    "service": {
+      "entropy": "nEzRCr35Bqd0xcaLMbbOSZR5",
+      "hostname": "juliasilge.com",
+      "protocol": "https:"
+    },
+    "type": "web_service_binding",
+    "version": 2
+  },
+  "client": {
+    "name": "keybase.io go client",
+    "version": "3.2.2"
+  },
+  "ctime": 1557254314,
+  "expire_in": 504576000,
+  "prev": "3a39ef8593e983ef458d60822b14d26b0a3d3ada228d976bf6bce18cf90af25b",
+  "seqno": 12,
+  "tag": "signature"
+}
+
+which yields the signature:
+
+hKRib2R5hqhkZXRhY2hlZMOpaGFzaF90eXBlCqNrZXnEIwEg5rsXCazOeQRilhsQhDSEUh784JHl6ocOtWoolcHKjD0Kp3BheWxvYWTESpcCDMQgOjnvhZPpg+9FjWCCKxTSawo9OtoijZdr9rzhjPkK8lvEINRdFI12QVTnNg1ARnKhZVWZbdAqmVc/0RH9KGa3xiA1AgHCo3NpZ8RAYvzjtJLPCuc+qAE5VhoH3Ik6Afh/1o80kIU31pwSLLDFvy9w57plCNv9vJFszKttYhgnxovykoKdkByZTp1MBKhzaWdfdHlwZSCkaGFzaIKkdHlwZQildmFsdWXEIBuuJUhMK59flm9HGvHoTEKwfPh9WkQI3OBgPY7pmGhxo3RhZ80CAqd2ZXJzaW9uAQ==
+
+And finally, I am proving ownership of this host by posting or
+appending to this document.
+
+View my publicly-auditable identity here: https://keybase.io/juliasilge
+
+==================================================================

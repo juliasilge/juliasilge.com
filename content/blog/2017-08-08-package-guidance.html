@@ -1,0 +1,116 @@
+---
+title: "Seeking guidance in choosing and evaluating R packages"
+date: 2017-08-08
+slug: "package-guidance"
+tags: [rstats]
+---
+
+
+
+<p>At useR!2017 in Brussels last month, I contributed to <a href="http://sched.co/AypJ">an organized session</a> focused on navigating the 11,000+ packages on CRAN. My collaborators on this session and I recently put together <a href="https://juliasilge.com/blog/navigating-packages/">an overall summary of the session and our goals</a>, and now I’d like to talk more about the specific issue of learning about R packages and deciding which ones to use. John and Spencer will write more soon about the two other issues of our focus:</p>
+<ul>
+<li>meta-packages that can unify multiple packages within domains and</li>
+<li>searching for packages.</li>
+</ul>
+<p>In preparation for this session, I ran a brief online survey in the spring of 2017 to ask R users how they currently discover and learn about R packages. The results of this survey are available in an <a href="https://github.com/juliasilge/packagesurvey">R package</a> (SO META) on GitHub.</p>
+<pre class="r"><code>library(packagesurvey)
+data(package_survey)</code></pre>
+<p>There were 1039 respondents to the survey. You can easily explore how many respondents chose each answer to the single question on the survey, “How do you currently discover and learn about R packages?”</p>
+<pre class="r"><code>library(tidyverse)
+
+package_survey %&gt;%
+    mutate(total = n_distinct(respondent)) %&gt;%
+    count(answer, total) %&gt;%
+    arrange(desc(n)) %&gt;%
+    mutate(proportion = scales::percent(n / total)) %&gt;% 
+    select(-total, -n) %&gt;%
+    kable(col.names = c(&quot;How do you currently discover and learn about R packages?&quot;,
+                        &quot;% of respondents who chose each answer&quot;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">How do you currently discover and learn about R packages?</th>
+<th align="left">% of respondents who chose each answer</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Social media such as blogs, R-bloggers, Twitter, Slack, or GitHub contacts</td>
+<td align="left">79.8%</td>
+</tr>
+<tr class="even">
+<td align="left">General search websites such as Google and Yahoo</td>
+<td align="left">57.0%</td>
+</tr>
+<tr class="odd">
+<td align="left">Your personal network, such as colleagues and professors</td>
+<td align="left">41.6%</td>
+</tr>
+<tr class="even">
+<td align="left">Books, textbooks, or journal articles (JSS, JOSS, R-Journal)</td>
+<td align="left">31.9%</td>
+</tr>
+<tr class="odd">
+<td align="left">Conferences, meet-ups, or seminars</td>
+<td align="left">24.1%</td>
+</tr>
+<tr class="even">
+<td align="left">CRAN Task Views</td>
+<td align="left">21.8%</td>
+</tr>
+<tr class="odd">
+<td align="left">Email lists such as r-help, r-packages, or r-pkg-devel</td>
+<td align="left">15.3%</td>
+</tr>
+<tr class="even">
+<td align="left">R-specific search websites such as METACRAN (www.r-pkg.org) or Rdocumentation (<a href="https://www.rdocumentation.org/" class="uri">https://www.rdocumentation.org/</a>)</td>
+<td align="left">11.1%</td>
+</tr>
+<tr class="odd">
+<td align="left">Other (send ideas to <span class="citation">@juliasilge</span> on Twitter!)</td>
+<td align="left">4.2%</td>
+</tr>
+<tr class="even">
+<td align="left">R packages built for search such as the sos package</td>
+<td align="left">2.2%</td>
+</tr>
+</tbody>
+</table>
+<p>Responses to this survey were fielded from R email help lists, local R meetup groups, social media such as Twitter, and affinity groups such as R-Ladies. The respondents to this survey overwhelmingly look to social media including blogs and Twitter to learn about R packages, and also make use of general search sites and their personal network. I know this aligns with how I personally learn about R packages!</p>
+<p>I heard some great and insightful answers from people contributing to the “other” option. R users use <a href="https://stackoverflow.com/questions/tagged/r">Stack Overflow</a> to learn about R packages, as well as options like <a href="http://dirk.eddelbuettel.com/cranberries/">CRANberries</a> and <a href="http://www.crantastic.org/">crantastic</a>, both of which have RSS feeds that users follow. Other users mentioned learning by reading code on GitHub (this is one I have done too!), and other search websites including <a href="http://rpackages.io/">rpackages.io</a>.</p>
+<p>You might also be interested in when R users responded to the survey.</p>
+<pre class="r"><code>package_survey %&gt;%
+    distinct(respondent, .keep_all = TRUE) %&gt;%
+    ggplot(aes(response_time)) +
+    geom_histogram(fill = &quot;midnightblue&quot;) +
+    labs(x = NULL,
+         y = &quot;Number of R users&quot;,
+         title = &quot;Responses to survey on package discovery over time&quot;)</code></pre>
+<p><img src="/blog/2017/2017-08-08-package-guidance_files/figure-html/unnamed-chunk-3-1.png" width="1260" /></p>
+<p>At useR, after the large combined session, we broke out into three smaller sessions for discussion and brainstorming. I facilitated the breakout session focused on guidance for package choice and package evaluation. We had about 40 participants in our discussion on choosing and evaluating R packages. It was a fruitful discussion and several important themes emerged.</p>
+<div id="the-value-of-personal-impact" class="section level2">
+<h2>The Value of Personal Impact</h2>
+<p>Participants in our session emphasized how impactful personal relationships can be in how packages are shared and evaluated. Some participants discussed how building local networks of R users may be more important in this effort than top-down, technological solutions. Our survey does show that personal recommendations have been important for many individuals in evaluating R packages. This is yet another area where local user groups can continue to have important impact. Some ways to share this experience more broadly would be online video series or live data analysis, such as those by <a href="https://www.facebook.com/seanjtaylor/videos/10103088186201897/?pnref=story">Sean Taylor</a> and <a href="https://twitter.com/rdpeng/status/872090694390861824">Roger Peng</a>.</p>
+</div>
+<div id="cran-task-views" class="section level2">
+<h2>CRAN Task Views</h2>
+<p>Some participants wondered whether the idea of a <a href="https://cran.r-project.org/web/views/">CRAN Task View</a> is outdated in the current climate with so many packages, and whether it is even possible for one person to main one effectively. Others responded that CTVs are all about curation, which is still important, perhaps even more important now. We had at least one CTV maintainer present in our breakout session, and several things were presented as important in order for CTV maintainers to do their jobs:</p>
+<ul>
+<li>Package maintainers should update their <code>NEWS</code> files.</li>
+<li>Package maintainers need to write good documentation.</li>
+</ul>
+<p>These are helpful for <em>all</em> R users, of course, but also for maintainers of CRAN Task Views. The <a href="https://hadley.github.io/pkgdown/articles/pkgdown.html">pkgdown</a> package was mentioned as a great way to make documentation visible.</p>
+</div>
+<div id="cran-and-you" class="section level2">
+<h2>CRAN and <em>You</em></h2>
+<p>Participants had several ideas about how things are done on CRAN now and adjustments that might be made in the interest of discovering and evaluating packages. One idea that came up several times was the possibility of keywords or tagging for packages. I have since learned that there is support for some tagging architecture for packages on CRAN (for example, <a href="https://cran.r-project.org/web/packages/lfe/">see here</a>) in the <a href="https://cran.r-project.org/doc/manuals/r-release/R-exts.html#The-DESCRIPTION-file">DESCRIPTION file using ACM, JEL, or MSC classifications</a>. These are fairly unwieldy lists currently and something like an RStudio addin could be used to navigate them, if they were widely used.</p>
+<p>Another desire participants voiced was for more information directly on CRAN, such as the number of downloads for packages. Participants also suggested that vignettes for context-specific tasks like the <a href="https://www.bioconductor.org/help/workflows/">Bioconductor Workflows</a> would be helpful for package discovery and evaluation, either associated with CRAN or perhaps the R Journal. Finally, there was some discussion about whether the very minimal gate-keeping on CRAN was good or bad for the community, although the general feeling was that efforts to keep packages off CRAN would not be positive.</p>
+</div>
+<div id="more-data-more-problems" class="section level2">
+<h2>More data, more problems</h2>
+<p>Some of the package developers at the session wondered why, when R is a data-centric language, developers have such primitive analytics about their users. Issues of user privacy are central here, but there might be opt-in options that could help both package developers and users make better decisions. The idea of a recommender system for R packages was brought up multiple times, perhaps a Tinder for R packages like <a href="https://simplystatistics.org/2016/10/03/papr/">papr, the Tinder for academic preprints</a>. Both the users and developers present thought that data on package use (instead of package downloads alone) would be helpful in evaluating how important or helpful R packages are. Participants also discussed the possibility of a linter for analysis scripts, similar in concept to <a href="https://github.com/jimhester/lintr">linters for code</a>, that would suggest packages and good practice. Such a linter would necessarily be opinionated, but almost all of the efforts to suggest and evaluate R packages are at some level.</p>
+</div>
+<div id="moving-forward" class="section level2">
+<h2>Moving forward</h2>
+<p>You can look to hear more from my collaborators on this session soon. I am really happy that this discussion is happening in our community. One thing that I am taking from it is increased respect and value for the work done by local meetup group organizers and individuals who contribute to spreading the R love, both online and in their communities. Turns out that is how people learn! Something else I am moving forward with is a continued commitment to growing my skills as a package developer. Writing good documentation and adopting best practices makes this whole challenge better for everyone, from the CRAN Task View maintainer to the new R user. I am very happy to hear feedback or questions from <em>you</em>!</p>
+</div>
