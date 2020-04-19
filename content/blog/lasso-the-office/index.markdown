@@ -3,6 +3,9 @@ title: "LASSO regression using tidymodels and #TidyTuesday data for The Office"
 date: 2020-03-17
 slug: "lasso-the-office"
 tags: [rstats,tidymodels]
+categories: [rstats,tidymodels]
+image:
+  preview_only: true
 ---
 
 
@@ -51,17 +54,17 @@ office_info
 ```
 ## # A tibble: 55,130 x 6
 ##    season episode episode_name director   writer                       character
-##     <dbl>   <dbl> <chr>        <chr>      <chr>                        <chr>    
-##  1      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael  
-##  2      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Jim      
-##  3      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael  
-##  4      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Jim      
-##  5      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael  
-##  6      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael  
-##  7      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael  
-##  8      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Pam      
-##  9      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael  
-## 10      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Pam      
+##     <dbl>   <dbl> <chr>        <chr>      <chr>                        <chr>
+##  1      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael
+##  2      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Jim
+##  3      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael
+##  4      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Jim
+##  5      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael
+##  6      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael
+##  7      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael
+##  8      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Pam
+##  9      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Michael
+## 10      1       1 pilot        Ken Kwapis Ricky Gervais;Stephen Merch… Pam
 ## # … with 55,120 more rows
 ```
 
@@ -248,7 +251,7 @@ lasso_fit %>%
 ## # A tibble: 1,576 x 5
 ##    term         step estimate lambda dev.ratio
 ##    <chr>       <dbl>    <dbl>  <dbl>     <dbl>
-##  1 (Intercept)     1  8.36     0.195    0     
+##  1 (Intercept)     1  8.36     0.195    0
 ##  2 (Intercept)     2  8.36     0.177    0.0244
 ##  3 jim             2  0.0174   0.177    0.0244
 ##  4 (Intercept)     3  8.36     0.162    0.0549

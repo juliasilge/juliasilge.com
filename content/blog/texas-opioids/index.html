@@ -3,6 +3,9 @@ title: "Opioid prescribing habits in Texas"
 date: 2019-10-12
 slug: "texas-opioids"
 tags: [rstats]
+categories: [rstats]
+image:
+  preview_only: true
 ---
 
 
@@ -33,8 +36,8 @@ new_opioids_raw &lt;- new_opioids_sheet %&gt;%
             col_types = &quot;cnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn&quot;,
             skip = 4,
             verbose = FALSE) %&gt;%
-    rename(Name = `Date/Month Filter`)  %&gt;% 
-    mutate(Date = case_when(str_detect(Name, 
+    rename(Name = `Date/Month Filter`)  %&gt;%
+    mutate(Date = case_when(str_detect(Name,
                                        &quot;^[a-zA-Z]{3}-[0-9]{2}$&quot;) ~ Name,
                             TRUE ~ NA_character_)) %&gt;%
     fill(Date, .direction = &quot;down&quot;) %&gt;%
@@ -55,13 +58,13 @@ drug_categories &lt;- categories_sheet %&gt;%
 
 opioids_tidy &lt;- opioids_raw %&gt;%
     gather(County, PillsOld, ANDERSON:ZAVALA) %&gt;%
-    full_join(new_opioids_raw %&gt;% 
+    full_join(new_opioids_raw %&gt;%
                   gather(County, PillsNew, ANDERSON:ZAVALA),
               by = c(&quot;Name&quot;, &quot;Date&quot;, &quot;County&quot;)) %&gt;%
     mutate(Pills = coalesce(PillsNew, PillsOld),
            Pills = ifelse(Pills &gt; 1e10, NA, Pills)) %&gt;%
     replace_na(replace = list(Pills = 0)) %&gt;%
-    mutate(County = str_to_title(County)) %&gt;% 
+    mutate(County = str_to_title(County)) %&gt;%
     select(-PillsNew, -PillsOld) %&gt;%
     left_join(drug_categories, by = &quot;Name&quot;) %&gt;%
     select(County, Date, Name, Category, Schedule, Pills) %&gt;%
@@ -108,12 +111,12 @@ opioids_tidy</code></pre>
 also 3 of the 4 least densely populated counties in the United States. It is also the seventh most ethnically diverse state with a substantially higher Hispanic population compared with the United States as a whole, but similar proportion of white and black residents. We can download Census data to explore these issues.</p>
 <pre class="r"><code>library(tidycensus)
 
-population &lt;- get_acs(geography = &quot;county&quot;, 
-                      variables = &quot;B01003_001&quot;, 
+population &lt;- get_acs(geography = &quot;county&quot;,
+                      variables = &quot;B01003_001&quot;,
                       state = &quot;TX&quot;,
                       geometry = TRUE) </code></pre>
-<pre class="r"><code>household_income &lt;- get_acs(geography = &quot;county&quot;, 
-                            variables = &quot;B19013_001&quot;, 
+<pre class="r"><code>household_income &lt;- get_acs(geography = &quot;county&quot;,
+                            variables = &quot;B19013_001&quot;,
                             state = &quot;TX&quot;,
                             geometry = TRUE)</code></pre>
 <p>To look at geographical patterns, we will take the median number of pills prescribed per month for each county during the time we have data for.</p>
@@ -123,8 +126,8 @@ population &lt;- get_acs(geography = &quot;county&quot;,
     ungroup %&gt;%
     mutate(Date = case_when(Date &gt; &quot;2017-01-01&quot; ~ &quot;2017 and later&quot;,
                             TRUE ~ &quot;Before 2017&quot;)) %&gt;%
-    group_by(County, Date) %&gt;% 
-    summarise(Pills = median(Pills)) %&gt;% 
+    group_by(County, Date) %&gt;%
+    summarise(Pills = median(Pills)) %&gt;%
     ungroup %&gt;%
     mutate(County = str_to_lower(str_c(County, &quot; County, Texas&quot;)),
            County = ifelse(County == &quot;de witt county, texas&quot;,
@@ -132,7 +135,7 @@ population &lt;- get_acs(geography = &quot;county&quot;,
     inner_join(population %&gt;% mutate(County = str_to_lower(NAME)), by = &quot;County&quot;) %&gt;%
     mutate(OpioidRate = Pills / estimate)</code></pre>
 <p>What are the controlled substance prescription rates in the top 10 most populous Texas counties?</p>
-<pre class="r"><code>opioids_joined %&gt;% 
+<pre class="r"><code>opioids_joined %&gt;%
   filter(Date == &quot;2017 and later&quot;) %&gt;%
   top_n(10, estimate) %&gt;%
   arrange(desc(estimate)) %&gt;%
@@ -198,11 +201,11 @@ opioids_map &lt;- opioids_joined %&gt;%
 opioids_map %&gt;%
   mutate(Date = factor(Date, levels = c(&quot;Before 2017&quot;, &quot;2017 and later&quot;))) %&gt;%
   st_as_sf() %&gt;%
-  ggplot(aes(fill = OpioidRate, color = OpioidRate)) + 
-  geom_sf() + 
-  coord_sf() + 
+  ggplot(aes(fill = OpioidRate, color = OpioidRate)) +
+  geom_sf() +
+  coord_sf() +
   facet_wrap(~Date) +
-  scale_fill_viridis(labels = scales::comma_format()) + 
+  scale_fill_viridis(labels = scales::comma_format()) +
   scale_color_viridis(guide = FALSE) +
   labs(fill = &quot;Monthly pills\nper capita&quot;,
        title = &quot;Controlled substance prescriptions across Texas&quot;,
@@ -212,11 +215,11 @@ opioids_map %&gt;%
 <p>We don’t see a direct or obvious relationship with household income, but, as the maps hint at, race is another matter.</p>
 <pre class="r"><code>race_vars &lt;- c(&quot;P005003&quot;, &quot;P005004&quot;, &quot;P005006&quot;, &quot;P004003&quot;)
 
-texas_race &lt;- get_decennial(geography = &quot;county&quot;, 
+texas_race &lt;- get_decennial(geography = &quot;county&quot;,
                             variables = race_vars,
                             year = 2010,
                             summary_var = &quot;P001001&quot;,
-                            state = &quot;TX&quot;) 
+                            state = &quot;TX&quot;)
 
 race_joined &lt;- texas_race %&gt;%
   mutate(PercentPopulation = value / summary_value,
@@ -224,10 +227,10 @@ race_joined &lt;- texas_race %&gt;%
                                White = &quot;P005003&quot;,
                                Black = &quot;P005004&quot;,
                                Asian = &quot;P005006&quot;,
-                               Hispanic = &quot;P004003&quot;)) %&gt;%   
+                               Hispanic = &quot;P004003&quot;)) %&gt;%
   inner_join(opioids_joined %&gt;%
                filter(OpioidRate &lt; 20) %&gt;%
-               group_by(GEOID, Date) %&gt;% 
+               group_by(GEOID, Date) %&gt;%
                summarise(OpioidRate = median(OpioidRate)))
 
 race_joined %&gt;%
@@ -235,7 +238,7 @@ race_joined %&gt;%
   summarise(Population = median(summary_value),
             OpioidRate = median(OpioidRate),
             PercentPopulation = median(PercentPopulation)) %&gt;%
-  ggplot(aes(PercentPopulation, OpioidRate, 
+  ggplot(aes(PercentPopulation, OpioidRate,
              size = Population, color = variable)) +
   geom_point(alpha = 0.4) +
   facet_wrap(~variable) +
@@ -260,11 +263,11 @@ opioids &lt;- race_joined %&gt;%
   select(GEOID, OpioidRate, TotalPop = summary_value,
          variable, PercentPopulation, Date) %&gt;%
   spread(variable, PercentPopulation) %&gt;%
-  left_join(household_income %&gt;% 
+  left_join(household_income %&gt;%
               select(GEOID, Income = estimate)) %&gt;%
   select(-geometry, -GEOID) %&gt;%
   mutate(Income = Income / 1e5,
-         OpioidRate = OpioidRate, 
+         OpioidRate = OpioidRate,
          Date = factor(Date, levels = c(&quot;Before 2017&quot;, &quot;2017 and later&quot;)),
          Date = fct_recode(Date, ` 2017 and later` = &quot;2017 and later&quot;))
 
@@ -389,11 +392,11 @@ huxreg(lm1, lm2, lm3, lm4)</code></pre>
 <p>We can more directly explore the factors involved in this explanatory model (income, ethnicity, time) visually.</p>
 <pre class="r"><code>race_joined %&gt;%
   filter(variable == &quot;White&quot;) %&gt;%
-  left_join(household_income %&gt;% 
-              as.data.frame() %&gt;% 
+  left_join(household_income %&gt;%
+              as.data.frame() %&gt;%
               select(GEOID, Income = estimate)) %&gt;%
   filter(!is.na(Income)) %&gt;%
-  mutate(Income = ifelse(Income &lt;= median(Income, na.rm = TRUE), 
+  mutate(Income = ifelse(Income &lt;= median(Income, na.rm = TRUE),
                          &quot;Low income&quot;, &quot;High income&quot;),
          PercentPopulation = cut_width(PercentPopulation, 0.1)) %&gt;%
   group_by(PercentPopulation, Income, Date) %&gt;%

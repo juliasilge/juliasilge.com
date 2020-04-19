@@ -3,6 +3,9 @@ title: "Tuning random forest hyperparameters with #TidyTuesday trees data"
 date: 2020-03-26
 slug: "sf-trees-random-tuning"
 tags: [rstats,tidymodels]
+categories: [rstats,tidymodels]
+image:
+  preview_only: true
 ---
 
 
@@ -88,7 +91,7 @@ trees_train <- training(trees_split)
 trees_test <- testing(trees_split)
 ```
 
-Next we build a recipe for data preprocessing. 
+Next we build a recipe for data preprocessing.
 
 - First, we must tell the `recipe()` what our model is going to be (using a formula here) and what our training data is.
 - Next, we update the role for `tree_id`, since this is a variable we might like to keep around for convenience as an identifier for rows but is not a predictor or outcome.
@@ -96,7 +99,7 @@ Next we build a recipe for data preprocessing.
 - The `date` column with when each tree was planted may be useful for fitting this model, but probably not the exact date, given how slowly trees grow. Let's create a year feature from the date, and then remove the original `date` variable.
 - There are many more DPW maintained trees than not, so let's downsample the data for training.
 
-The object `tree_rec` is a recipe that has **not** been trained on data yet (for example, which categorical levels should be collapsed has not been calculated) and `tree_prep` is an object that **has** been trained on data. 
+The object `tree_rec` is a recipe that has **not** been trained on data yet (for example, which categorical levels should be collapsed has not been calculated) and `tree_prep` is an object that **has** been trained on data.
 
 
 ```r
@@ -113,7 +116,7 @@ tree_prep <- prep(tree_rec)
 juiced <- juice(tree_prep)
 ```
 
-Now it's time to create a model specification for a random forest where we will tune `mtry` (the number of predictors to sample at each split) and `min_n` (the number of observations needed to keep splitting nodes). These are **hyperparameters** that can't be learned from data when training the model. 
+Now it's time to create a model specification for a random forest where we will tune `mtry` (the number of predictors to sample at each split) and `min_n` (the number of observations needed to keep splitting nodes). These are **hyperparameters** that can't be learned from data when training the model.
 
 
 ```r
@@ -164,10 +167,10 @@ tune_res
 ```
 
 ```
-## #  10-fold cross-validation 
+## #  10-fold cross-validation
 ## # A tibble: 10 x 4
-##    splits               id     .metrics          .notes          
-##    <list>               <chr>  <list>            <list>          
+##    splits               id     .metrics          .notes
+##    <list>               <chr>  <list>            <list>
 ##  1 <split [16.1K/1.8K]> Fold01 <tibble [40 × 5]> <tibble [0 × 1]>
 ##  2 <split [16.1K/1.8K]> Fold02 <tibble [40 × 5]> <tibble [0 × 1]>
 ##  3 <split [16.1K/1.8K]> Fold03 <tibble [40 × 5]> <tibble [0 × 1]>
@@ -245,10 +248,10 @@ regular_res
 ```
 
 ```
-## #  10-fold cross-validation 
+## #  10-fold cross-validation
 ## # A tibble: 10 x 4
-##    splits               id     .metrics          .notes          
-##    <list>               <chr>  <list>            <list>          
+##    splits               id     .metrics          .notes
+##    <list>               <chr>  <list>            <list>
 ##  1 <split [16.1K/1.8K]> Fold01 <tibble [50 × 5]> <tibble [0 × 1]>
 ##  2 <split [16.1K/1.8K]> Fold02 <tibble [50 × 5]> <tibble [0 × 1]>
 ##  3 <split [16.1K/1.8K]> Fold03 <tibble [50 × 5]> <tibble [0 × 1]>
@@ -296,12 +299,12 @@ final_rf
 
 ```
 ## Random Forest Model Specification (classification)
-## 
+##
 ## Main Arguments:
 ##   mtry = 15
 ##   trees = 1000
 ##   min_n = 2
-## 
+##
 ## Computational engine: ranger
 ```
 
