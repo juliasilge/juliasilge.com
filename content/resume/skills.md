@@ -17,13 +17,13 @@ subtitle = ""
 [[feature]]
   icon = "chart-bar"
   icon_pack = "fas"
-  name = "Machine learning, statistical modeling, natural language processing, text mining, data analysis, R, SQL"
+  name = "Machine learning, statistical modeling, natural language processing, text mining, data analysis"
   description = ""
   
 [[feature]]
   icon = "tools"
   icon_pack = "fas"
-  name = "GitHub, Markdown, shell scripting"
+  name = "R, SQL, GitHub, Markdown, shell scripting"
   description = ""  
   
 [[feature]]
