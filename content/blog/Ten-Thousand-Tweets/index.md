@@ -215,13 +215,11 @@ ggplot(data = latenighttweets, aes(x = timestamp)) +
 
 What are these tweets? I am *never* awake in the middle of the night!
 
-<blockquote class="twitter-tweet" lang="en"><p lang="en" dir="ltr">4am here. 3yo has been awake since 1am, crying, coughing, demanding chocolate milk, waking up croupy baby when I finally get him to sleep.</p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/175899182127783936">March 3, 2012</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+{{< tweet 175899182127783936 >}}
 
 Oh...
 
-<blockquote class="twitter-tweet" lang="en"><p lang="en" dir="ltr">2am vomit! (Not me.) Motherhood is so GLAMOROUS sometimes...</p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/338576358059950080">May 26, 2013</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+{{< tweet 338576358059950080 >}}
 
 Hmmmm...
 
@@ -358,13 +356,11 @@ This means that my histogram above is biased high a little bit; the number of ch
 
 The tweets with really low numbers of characters made me a bit suspicious too, but it turns out they are all real and normal tweets. Many were just very short replies to other people, but sometimes it turns out you don't need many characters to say what you want to say.
 
-<blockquote class="twitter-tweet" lang="en"><p lang="en" dir="ltr">Naps are awesome.</p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/1001102261">November 11, 2008</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+{{< tweet 1001102261 >}}
 
 So true.
 
-<blockquote class="twitter-tweet" lang="en"><p lang="en" dir="ltr">UGH, CANDY.</p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/528385670197567488">November 1, 2014</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+{{< tweet 528385670197567488 >}}
 
 Amen.
 

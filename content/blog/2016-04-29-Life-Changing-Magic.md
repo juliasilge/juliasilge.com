@@ -22,7 +22,7 @@ One of the important functions we knew we needed was something to unnest text by
 
 (What?! Surely you're not *tired* of them yet?)
 
-<iframe src="http://giphy.com/embed/AmbVLKsrsbdjG" width="480" height="252" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="http://giphy.com/gifs/pride-and-prejudice-mr-darcy-AmbVLKsrsbdjG">via GIPHY</a></p>
+<iframe src="https://giphy.com/embed/AmbVLKsrsbdjG" width="480" height="252" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/pride-and-prejudice-mr-darcy-AmbVLKsrsbdjG">via GIPHY</a></p>
 
 The janeaustenr package has a function `austen_books` that returns a tidy dataframe of all of the novels. Let's use that, annotate a `linenumber` quantity to keep track of lines in the original format, use a regex to find where all the chapters are, and then `unnest_tokens`.
 

@@ -2,13 +2,14 @@
 title: "Text Mining in R: A Tidy Approach"
 slug: "RStudio-Conf"
 date: 2017-01-14
-excerpt: "Slides from rstudio::conf and our book cover"
+subtitle: "Slides from rstudio::conf and our book cover"
 tags: [rstats]
+categories: [rstats]
 ---
 
 I spoke on approaching text mining tasks using tidy data principles at [rstudio::conf](https://www.rstudio.com/conference/) yesterday. I was so happy to have the opportunity to speak and the conference has been a great experience.
 
-<div><div style="left: 0px; width: 100%; height: 0px; position: relative; padding-bottom: 83.9419%;"><iframe src="http://speakerdeck.com/player/d6041c6b704d4bf7bfa9d0973ae2d006" frameborder="0" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" style="top: 0px; left: 0px; width: 100%; height: 100%; position: absolute;"></iframe></div></div>
+<div><div style="left: 0px; width: 100%; height: 0px; position: relative; padding-bottom: 83.9419%;"><iframe src="https://speakerdeck.com/player/d6041c6b704d4bf7bfa9d0973ae2d006" frameborder="0" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" style="top: 0px; left: 0px; width: 100%; height: 100%; position: absolute;"></iframe></div></div>
 
 <br>
 

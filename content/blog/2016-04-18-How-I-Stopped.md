@@ -10,8 +10,7 @@ tags: [rstats]
 
 Last week, I officially became the maintainer of a CRAN package! My [package for the texts of Jane Austen's 6 completed, published novels](https://github.com/juliasilge/janeaustenr), `janeaustenr`, was released on CRAN and my Twitter feed was filled with congratulatory Jane Austen GIFs. I think this might be my favorite.
 
-<blockquote class="twitter-tweet" data-conversation="none" data-lang="en"><p lang="en" dir="ltr">.<a href="https://twitter.com/juliasilge">@juliasilge</a> <br>*clears schedule*<br>*opens <a href="https://twitter.com/rstudio">@rstudio</a> * <a href="https://t.co/Hu7V2E0ULJ">pic.twitter.com/Hu7V2E0ULJ</a></p>&mdash; Andrew MacDonald (@polesasunder) <a href="https://twitter.com/polesasunder/status/721103557869436928">April 15, 2016</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+{{< tweet 721103557869436928 >}}
 
 It was a good day.
 

@@ -10,8 +10,8 @@ tags: [rstats]
 
 I have been full of grief and sadness and some anger in the wake of yet more videos going viral in the past couple days showing black men being killed by police officers. I am not an expert on what it means to be a person of color in the United States or what is or isn't wrong with policing today here, but it sure feels like something is deeply broken. I was reminded today that the Washington Post is compiling a database of every fatal shooting in the United States by a police officer in the line of duty since January 1, 2015 and has made that database [publicly available on GitHub](https://github.com/washingtonpost/data-police-shootings). 
 
-<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">This is your regular reminder that we have the last 18 months of fatal police shooting data on Github: <a href="https://t.co/O6zP2JG7Ae">https://t.co/O6zP2JG7Ae</a></p>&mdash; Steven Rich (@dataeditor) <a href="https://twitter.com/dataeditor/status/751057842501783552">July 7, 2016</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+{{< tweet 751057842501783552 >}}
 
 Their own visualizations and reporting are [online here](https://www.washingtonpost.com/graphics/national/police-shootings-2016/) and are great, and today I decided to make a flexdashboard exploring the Washington Post's data set, as it exists right now.
 

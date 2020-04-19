@@ -34,8 +34,7 @@ This isn't R code or anything; it is telling Travis how to go about building the
 
 If you are lucky, your package will build on Travis successfully and you can add your beautiful green badge to your README on GitHub, if you haven't already added it via `devtools::use_travis()` or copy/pasting from elsewhere. If you are less than lucky, well...
 
-<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">Things are going great; why do you ask?! <a href="https://twitter.com/hashtag/rstats?src=hash">#rstats</a> <a href="https://t.co/x3jJQZkuGs">pic.twitter.com/x3jJQZkuGs</a></p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/722514130968535042">April 19, 2016</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+{{< tweet 722514130968535042 >}}
 
 If a build on Travis is erroring or failing (which are different), I tend to think of the problems being of two possible types: 
 
