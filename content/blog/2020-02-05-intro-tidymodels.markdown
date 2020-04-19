@@ -3,6 +3,7 @@ title: "#TidyTuesday and tidymodels"
 date: 2020-02-05
 slug: "intro-tidymodels"
 tags: [rstats,tidymodels]
+categories: [rstats,tidymodels]
 ---
 
 
@@ -177,7 +178,7 @@ lm_spec
 
 ```
 ## Linear Regression Model Specification (regression)
-## 
+##
 ## Computational engine: lm
 ```
 
@@ -192,38 +193,38 @@ lm_fit
 
 ```
 ## parsnip model object
-## 
-## Fit time:  16ms 
-## 
+##
+## Fit time:  16ms
+##
 ## Call:
 ## stats::lm(formula = formula, data = data)
-## 
+##
 ## Coefficients:
-##          (Intercept)        team_nameBears      team_nameBengals  
-##            -81107.86              -2879.80              -4875.47  
-##       team_nameBills      team_nameBroncos       team_nameBrowns  
-##              -361.08               2805.24               -324.11  
-##  team_nameBuccaneers    team_nameCardinals     team_nameChargers  
-##             -3063.65              -6139.80              -6489.31  
-##      team_nameChiefs        team_nameColts      team_nameCowboys  
-##              1974.33              -3392.79               6068.70  
-##    team_nameDolphins       team_nameEagles      team_nameFalcons  
-##               139.68               1259.16               -204.17  
-##      team_nameGiants      team_nameJaguars         team_nameJets  
-##              5447.10              -3095.46               4044.23  
-##       team_nameLions      team_namePackers     team_namePanthers  
-##             -3480.69               1114.11               1227.32  
-##    team_namePatriots      team_nameRaiders         team_nameRams  
-##              -214.20              -6324.74              -2884.85  
-##      team_nameRavens     team_nameRedskins       team_nameSaints  
-##              -398.90               6447.07                380.98  
-##    team_nameSeahawks     team_nameSteelers       team_nameTexans  
-##             -1405.89              -3567.81                264.07  
-##      team_nameTitans      team_nameVikings                  year  
-##             -1118.23              -3183.08                 74.73  
-##                 week     margin_of_victory  strength_of_schedule  
-##               -72.83                137.58                230.74  
-##     playoffsPlayoffs  
+##          (Intercept)        team_nameBears      team_nameBengals
+##            -81107.86              -2879.80              -4875.47
+##       team_nameBills      team_nameBroncos       team_nameBrowns
+##              -361.08               2805.24               -324.11
+##  team_nameBuccaneers    team_nameCardinals     team_nameChargers
+##             -3063.65              -6139.80              -6489.31
+##      team_nameChiefs        team_nameColts      team_nameCowboys
+##              1974.33              -3392.79               6068.70
+##    team_nameDolphins       team_nameEagles      team_nameFalcons
+##               139.68               1259.16               -204.17
+##      team_nameGiants      team_nameJaguars         team_nameJets
+##              5447.10              -3095.46               4044.23
+##       team_nameLions      team_namePackers     team_namePanthers
+##             -3480.69               1114.11               1227.32
+##    team_namePatriots      team_nameRaiders         team_nameRams
+##              -214.20              -6324.74              -2884.85
+##      team_nameRavens     team_nameRedskins       team_nameSaints
+##              -398.90               6447.07                380.98
+##    team_nameSeahawks     team_nameSteelers       team_nameTexans
+##             -1405.89              -3567.81                264.07
+##      team_nameTitans      team_nameVikings                  year
+##             -1118.23              -3183.08                 74.73
+##                 week     margin_of_victory  strength_of_schedule
+##               -72.83                137.58                230.74
+##     playoffsPlayoffs
 ##              -427.94
 ```
 
@@ -239,7 +240,7 @@ rf_spec
 
 ```
 ## Random Forest Model Specification (regression)
-## 
+##
 ## Computational engine: ranger
 ```
 
@@ -254,22 +255,22 @@ rf_fit
 
 ```
 ## parsnip model object
-## 
-## Fit time:  2.2s 
+##
+## Fit time:  2.2s
 ## Ranger result
-## 
+##
 ## Call:
-##  ranger::ranger(formula = formula, data = data, num.threads = 1,      verbose = FALSE, seed = sample.int(10^5, 1)) 
-## 
-## Type:                             Regression 
-## Number of trees:                  500 
-## Sample size:                      7656 
-## Number of independent variables:  6 
-## Mtry:                             2 
-## Target node size:                 5 
-## Variable importance mode:         none 
-## Splitrule:                        variance 
-## OOB prediction error (MSE):       74737868 
+##  ranger::ranger(formula = formula, data = data, num.threads = 1,      verbose = FALSE, seed = sample.int(10^5, 1))
+##
+## Type:                             Regression
+## Number of trees:                  500
+## Sample size:                      7656
+## Number of independent variables:  6
+## Mtry:                             2
+## Target node size:                 5
+## Variable importance mode:         none
+## Splitrule:                        variance
+## OOB prediction error (MSE):       74737868
 ## R squared (OOB):                  0.08217606
 ```
 
@@ -277,7 +278,7 @@ Notice that we have fit both of these models using `nfl_train`, the training dat
 
 ## Evaluate models
 
-When it's time to evaluate our models (to estimate how well our models will perform on new data), then we will look at `nfl_test`. We can `predict()` what the weekly attendance will be for both the training data and the testing data using both the OLS and random forest models. One of the goals of tidymodels is to be able to use code like the following in predictable, consistent ways for many kinds of models, and to use existing well-suited tidyverse tools for these kinds of tasks. 
+When it's time to evaluate our models (to estimate how well our models will perform on new data), then we will look at `nfl_test`. We can `predict()` what the weekly attendance will be for both the training data and the testing data using both the OLS and random forest models. One of the goals of tidymodels is to be able to use code like the following in predictable, consistent ways for many kinds of models, and to use existing well-suited tidyverse tools for these kinds of tasks.
 
 
 ```r
@@ -386,7 +387,7 @@ rf_res %>%
 ## # A tibble: 2 x 5
 ##   .metric .estimator     mean     n   std_err
 ##   <chr>   <chr>         <dbl> <int>     <dbl>
-## 1 rmse    standard   8255.       10 115.     
+## 1 rmse    standard   8255.       10 115.
 ## 2 rsq     standard      0.164    10   0.00988
 ```
 

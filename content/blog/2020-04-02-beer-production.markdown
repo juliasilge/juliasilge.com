@@ -3,6 +3,7 @@ title: "Bootstrap resampling with #TidyTuesday beer production data"
 date: 2020-04-02
 slug: "beer-production"
 tags: [rstats,tidymodels]
+categories: [rstats,tidymodels]
 ---
 
 
@@ -130,22 +131,22 @@ summary(beer_fit)
 ```
 
 ```
-## 
+##
 ## Call:
 ## lm(formula = sugar_and_syrups ~ 0 + malt_and_malt_products, data = brewing_materials)
-## 
+##
 ## Residuals:
-##       Min        1Q    Median        3Q       Max 
-## -29985291  -6468052    174001   7364462  23462837 
-## 
+##       Min        1Q    Median        3Q       Max
+## -29985291  -6468052    174001   7364462  23462837
+##
 ## Coefficients:
-##                        Estimate Std. Error t value Pr(>|t|)    
+##                        Estimate Std. Error t value Pr(>|t|)
 ## malt_and_malt_products 0.205804   0.003446   59.72   <2e-16 ***
 ## ---
 ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-## 
+##
 ## Residual standard error: 11480000 on 93 degrees of freedom
-## Multiple R-squared:  0.9746,	Adjusted R-squared:  0.9743 
+## Multiple R-squared:  0.9746,	Adjusted R-squared:  0.9743
 ## F-statistic:  3567 on 1 and 93 DF,  p-value: < 2.2e-16
 ```
 
@@ -176,10 +177,10 @@ beer_boot
 ```
 
 ```
-## # Bootstrap sampling with apparent sample 
+## # Bootstrap sampling with apparent sample
 ## # A tibble: 1,001 x 2
-##    splits          id           
-##    <list>          <chr>        
+##    splits          id
+##    <list>          <chr>
 ##  1 <split [94/39]> Bootstrap0001
 ##  2 <split [94/34]> Bootstrap0002
 ##  3 <split [94/37]> Bootstrap0003
@@ -248,8 +249,8 @@ int_pctl(beer_models, coef_info)
 
 ```
 ## # A tibble: 1 x 6
-##   term                   .lower .estimate .upper .alpha .method   
-##   <chr>                   <dbl>     <dbl>  <dbl>  <dbl> <chr>     
+##   term                   .lower .estimate .upper .alpha .method
+##   <chr>                   <dbl>     <dbl>  <dbl>  <dbl> <chr>
 ## 1 malt_and_malt_products  0.199     0.206  0.212   0.05 percentile
 ```
 

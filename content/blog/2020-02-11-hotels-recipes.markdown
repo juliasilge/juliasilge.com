@@ -3,6 +3,7 @@ title: "#TidyTuesday hotel bookings and recipes"
 date: 2020-02-11
 slug: "hotels-recipes"
 tags: [rstats,tidymodels]
+categories: [rstats,tidymodels]
 ---
 
 
@@ -97,18 +98,18 @@ skim(hotel_stays)
 
 ```
 ## ── Data Summary ────────────────────────
-##                            Values     
+##                            Values
 ## Name                       hotel_stays
-## Number of rows             75166      
-## Number of columns          29         
-## _______________________               
-## Column type frequency:                
-##   character                14         
-##   Date                     1          
-##   numeric                  14         
-## ________________________              
-## Group variables            None       
-## 
+## Number of rows             75166
+## Number of columns          29
+## _______________________
+## Column type frequency:
+##   character                14
+##   Date                     1
+##   numeric                  14
+## ________________________
+## Group variables            None
+##
 ## ── Variable type: character ────────────────────────────────────────────────────
 ##    skim_variable               n_missing complete_rate   min   max empty
 ##  1 hotel                               0             1    10    12     0
@@ -140,30 +141,30 @@ skim(hotel_stays)
 ## 12      332          0
 ## 13        4          0
 ## 14        2          0
-## 
+##
 ## ── Variable type: Date ─────────────────────────────────────────────────────────
-##   skim_variable           n_missing complete_rate min        max       
+##   skim_variable           n_missing complete_rate min        max
 ## 1 reservation_status_date         0             1 2015-07-01 2017-09-14
 ##   median     n_unique
 ## 1 2016-09-01      805
-## 
+##
 ## ── Variable type: numeric ──────────────────────────────────────────────────────
 ##    skim_variable                  n_missing complete_rate      mean     sd
-##  1 lead_time                              0             1   80.0    91.1  
+##  1 lead_time                              0             1   80.0    91.1
 ##  2 arrival_date_year                      0             1 2016.      0.703
-##  3 arrival_date_week_number               0             1   27.1    13.9  
-##  4 arrival_date_day_of_month              0             1   15.8     8.78 
+##  3 arrival_date_week_number               0             1   27.1    13.9
+##  4 arrival_date_day_of_month              0             1   15.8     8.78
 ##  5 stays_in_weekend_nights                0             1    0.929   0.993
-##  6 stays_in_week_nights                   0             1    2.46    1.92 
+##  6 stays_in_week_nights                   0             1    2.46    1.92
 ##  7 adults                                 0             1    1.83    0.510
 ##  8 is_repeated_guest                      0             1    0.0433  0.204
 ##  9 previous_cancellations                 0             1    0.0158  0.272
-## 10 previous_bookings_not_canceled         0             1    0.203   1.81 
+## 10 previous_bookings_not_canceled         0             1    0.203   1.81
 ## 11 booking_changes                        0             1    0.293   0.736
-## 12 days_in_waiting_list                   0             1    1.59   14.8  
-## 13 adr                                    0             1  100.     49.2  
+## 12 days_in_waiting_list                   0             1    1.59   14.8
+## 13 adr                                    0             1  100.     49.2
 ## 14 total_of_special_requests              0             1    0.714   0.834
-##         p0    p25    p50   p75  p100 hist 
+##         p0    p25    p50   p75  p100 hist
 ##  1    0       9     45     124   737 ▇▂▁▁▁
 ##  2 2015    2016   2016    2017  2017 ▃▁▇▁▆
 ##  3    1      16     28      38    53 ▆▇▇▇▆
@@ -292,17 +293,17 @@ hotel_rec
 
 ```
 ## Data Recipe
-## 
+##
 ## Inputs:
-## 
+##
 ##       role #variables
 ##    outcome          1
 ##  predictor          9
-## 
+##
 ## Training data contained 56375 data points and no missing data.
-## 
+##
 ## Operations:
-## 
+##
 ## Down-sampling based on children [trained]
 ## Dummy variables from hotel, arrival_date_month, ... [trained]
 ## Zero variance filter removed no terms [trained]
@@ -329,12 +330,12 @@ knn_fit
 
 ```
 ## parsnip model object
-## 
-## Fit time:  1.4s 
-## 
+##
+## Fit time:  1.4s
+##
 ## Call:
 ## kknn::train.kknn(formula = formula, data = data, ks = 5)
-## 
+##
 ## Type of response variable: nominal
 ## Minimal misclassification: 0.2518527
 ## Best kernel: optimal
@@ -354,18 +355,18 @@ tree_fit
 
 ```
 ## parsnip model object
-## 
-## Fit time:  287ms 
-## n= 9176 
-## 
+##
+## Fit time:  287ms
+## n= 9176
+##
 ## node), split, n, loss, yval, (yprob)
 ##       * denotes terminal node
-## 
-##  1) root 9176 4588 children (0.5000000 0.5000000)  
+##
+##  1) root 9176 4588 children (0.5000000 0.5000000)
 ##    2) adr>=-0.03405154 4059 1092 children (0.7309682 0.2690318) *
-##    3) adr< -0.03405154 5117 1621 none (0.3167872 0.6832128)  
+##    3) adr< -0.03405154 5117 1621 none (0.3167872 0.6832128)
 ##      6) total_of_special_requests>=0.647359 944  416 children (0.5593220 0.4406780) *
-##      7) total_of_special_requests< 0.647359 4173 1093 none (0.2619219 0.7380781)  
+##      7) total_of_special_requests< 0.647359 4173 1093 none (0.2619219 0.7380781)
 ##       14) adults< -2.852103 80    9 children (0.8875000 0.1125000) *
 ##       15) adults>=-2.852103 4093 1022 none (0.2496946 0.7503054) *
 ```
@@ -384,10 +385,10 @@ validation_splits
 ```
 
 ```
-## # Monte Carlo cross-validation (0.9/0.1) with 25 resamples  using stratification 
+## # Monte Carlo cross-validation (0.9/0.1) with 25 resamples  using stratification
 ## # A tibble: 25 x 2
-##    splits             id        
-##    <named list>       <chr>     
+##    splits             id
+##    <named list>       <chr>
 ##  1 <split [8.3K/916]> Resample01
 ##  2 <split [8.3K/916]> Resample02
 ##  3 <split [8.3K/916]> Resample03

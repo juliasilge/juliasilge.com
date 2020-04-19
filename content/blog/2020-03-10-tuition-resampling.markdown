@@ -3,6 +3,7 @@ title: "Preprocessing and resampling using #TidyTuesday college data"
 date: 2020-03-10
 slug: "tuition-resampling"
 tags: [rstats,tidymodels]
+categories: [rstats,tidymodels]
 ---
 
 
@@ -78,29 +79,29 @@ skimr::skim(university_df)
 
 ```
 ## ── Data Summary ────────────────────────
-##                            Values       
+##                            Values
 ## Name                       university_df
-## Number of rows             2159         
-## Number of columns          9            
-## _______________________                 
-## Column type frequency:                  
-##   factor                   4            
-##   numeric                  5            
-## ________________________                
-## Group variables            None         
-## 
+## Number of rows             2159
+## Number of columns          9
+## _______________________
+## Column type frequency:
+##   factor                   4
+##   numeric                  5
+## ________________________
+## Group variables            None
+##
 ## ── Variable type: factor ───────────────────────────────────────────────────────
 ##   skim_variable n_missing complete_rate ordered n_unique
 ## 1 diversity             0             1 FALSE          2
 ## 2 type                  0             1 FALSE          3
 ## 3 degree_length         0             1 FALSE          2
 ## 4 region                0             1 FALSE          4
-##   top_counts                            
-## 1 low: 1241, hig: 918                   
-## 2 Pub: 1145, Pri: 955, For: 59          
-## 3 4 Y: 1296, 2 Y: 863                   
+##   top_counts
+## 1 low: 1241, hig: 918
+## 2 Pub: 1145, Pri: 955, For: 59
+## 3 4 Y: 1296, 2 Y: 863
 ## 4 Sou: 774, Nor: 543, Nor: 443, Wes: 399
-## 
+##
 ## ── Variable type: numeric ──────────────────────────────────────────────────────
 ##   skim_variable        n_missing complete_rate   mean     sd    p0   p25   p50
 ## 1 total_enrollment             0             1  6184.  8264.    15  1352  3133
@@ -108,7 +109,7 @@ skimr::skim(university_df)
 ## 3 in_state_total               0             1 23545. 19782.   962  5552 17749
 ## 4 out_of_state_tuition         0             1 20798. 13725.   480  9298 17045
 ## 5 out_of_state_total           0             1 27299. 18221.  1376 11018 23036
-##      p75  p100 hist 
+##      p75  p100 hist
 ## 1  7644. 81459 ▇▁▁▁▁
 ## 2 28780  59985 ▇▂▂▁▁
 ## 3 38519  75003 ▇▅▂▂▁
@@ -164,24 +165,24 @@ uni_prep
 
 ```
 ## Data Recipe
-## 
+##
 ## Inputs:
-## 
+##
 ##       role #variables
 ##    outcome          1
 ##  predictor          8
-## 
+##
 ## Training data contained 1620 data points and no missing data.
-## 
+##
 ## Operations:
-## 
+##
 ## Correlation filter removed in_state_tuition, ... [trained]
 ## Dummy variables from type, degree_length, region [trained]
 ## Zero variance filter removed no terms [trained]
 ## Centering and scaling for total_enrollment, ... [trained]
 ```
 
-Now it's time to **specify** and then **fit** our models. Here, we specify and fit three models: 
+Now it's time to **specify** and then **fit** our models. Here, we specify and fit three models:
 
 - logistic regression
 - k-nearest neighbor
@@ -204,21 +205,21 @@ glm_fit
 
 ```
 ## parsnip model object
-## 
-## Fit time:  7ms 
-## 
+##
+## Fit time:  7ms
+##
 ## Call:  stats::glm(formula = formula, family = stats::binomial, data = data)
-## 
+##
 ## Coefficients:
-##           (Intercept)       total_enrollment     out_of_state_total  
-##                0.3704                -0.4581                 0.5074  
-##          type_Private            type_Public  degree_length_X4.Year  
-##               -0.1656                 0.2058                 0.2082  
-##          region_South   region_North.Central            region_West  
-##               -0.5175                 0.3004                -0.5363  
-## 
+##           (Intercept)       total_enrollment     out_of_state_total
+##                0.3704                -0.4581                 0.5074
+##          type_Private            type_Public  degree_length_X4.Year
+##               -0.1656                 0.2058                 0.2082
+##          region_South   region_North.Central            region_West
+##               -0.5175                 0.3004                -0.5363
+##
 ## Degrees of Freedom: 1619 Total (i.e. Null);  1611 Residual
-## Null Deviance:	    2210 
+## Null Deviance:	    2210
 ## Residual Deviance: 1859 	AIC: 1877
 ```
 
@@ -235,12 +236,12 @@ knn_fit
 
 ```
 ## parsnip model object
-## 
-## Fit time:  54ms 
-## 
+##
+## Fit time:  54ms
+##
 ## Call:
 ## kknn::train.kknn(formula = formula, data = data, ks = 5)
-## 
+##
 ## Type of response variable: nominal
 ## Minimal misclassification: 0.3277778
 ## Best kernel: optimal
@@ -260,30 +261,30 @@ tree_fit
 
 ```
 ## parsnip model object
-## 
-## Fit time:  23ms 
-## n= 1620 
-## 
+##
+## Fit time:  23ms
+## n= 1620
+##
 ## node), split, n, loss, yval, (yprob)
 ##       * denotes terminal node
-## 
-##  1) root 1620 689 low (0.4253086 0.5746914)  
-##    2) region_North.Central< 0.5346496 1192 586 high (0.5083893 0.4916107)  
+##
+##  1) root 1620 689 low (0.4253086 0.5746914)
+##    2) region_North.Central< 0.5346496 1192 586 high (0.5083893 0.4916107)
 ##      4) out_of_state_total< -0.7087237 418 130 high (0.6889952 0.3110048) *
-##      5) out_of_state_total>=-0.7087237 774 318 low (0.4108527 0.5891473)  
-##       10) out_of_state_total< 0.35164 362 180 low (0.4972376 0.5027624)  
-##         20) region_South>=0.3002561 212  86 high (0.5943396 0.4056604)  
+##      5) out_of_state_total>=-0.7087237 774 318 low (0.4108527 0.5891473)
+##       10) out_of_state_total< 0.35164 362 180 low (0.4972376 0.5027624)
+##         20) region_South>=0.3002561 212  86 high (0.5943396 0.4056604)
 ##           40) degree_length_X4.Year>=-0.2001293 172  62 high (0.6395349 0.3604651) *
 ##           41) degree_length_X4.Year< -0.2001293 40  16 low (0.4000000 0.6000000) *
-##         21) region_South< 0.3002561 150  54 low (0.3600000 0.6400000)  
+##         21) region_South< 0.3002561 150  54 low (0.3600000 0.6400000)
 ##           42) region_West>=0.8128302 64  28 high (0.5625000 0.4375000) *
 ##           43) region_West< 0.8128302 86  18 low (0.2093023 0.7906977) *
-##       11) out_of_state_total>=0.35164 412 138 low (0.3349515 0.6650485)  
-##         22) region_West>=0.8128302 88  38 high (0.5681818 0.4318182)  
+##       11) out_of_state_total>=0.35164 412 138 low (0.3349515 0.6650485)
+##         22) region_West>=0.8128302 88  38 high (0.5681818 0.4318182)
 ##           44) out_of_state_total>=1.547681 30   5 high (0.8333333 0.1666667) *
 ##           45) out_of_state_total< 1.547681 58  25 low (0.4310345 0.5689655) *
 ##         23) region_West< 0.8128302 324  88 low (0.2716049 0.7283951) *
-##    3) region_North.Central>=0.5346496 428  83 low (0.1939252 0.8060748)  
+##    3) region_North.Central>=0.5346496 428  83 low (0.1939252 0.8060748)
 ##      6) out_of_state_total< -1.19287 17   5 high (0.7058824 0.2941176) *
 ##      7) out_of_state_total>=-1.19287 411  71 low (0.1727494 0.8272506) *
 ```
@@ -350,10 +351,10 @@ tree_rs
 ```
 
 ```
-## #  10-fold cross-validation using stratification 
+## #  10-fold cross-validation using stratification
 ## # A tibble: 10 x 5
-##    splits             id     .metrics         .notes           .predictions     
-##    <list>             <chr>  <list>           <list>           <list>           
+##    splits             id     .metrics         .notes           .predictions
+##    <list>             <chr>  <list>           <list>           <list>
 ##  1 <split [1.5K/163]> Fold01 <tibble [3 × 3]> <tibble [0 × 1]> <tibble [163 × 5…
 ##  2 <split [1.5K/162]> Fold02 <tibble [3 × 3]> <tibble [0 × 1]> <tibble [162 × 5…
 ##  3 <split [1.5K/162]> Fold03 <tibble [3 × 3]> <tibble [0 × 1]> <tibble [162 × 5…
@@ -379,7 +380,7 @@ glm_rs %>%
 ##   .metric .estimator  mean     n std_err
 ##   <chr>   <chr>      <dbl> <int>   <dbl>
 ## 1 roc_auc binary     0.758    10 0.00891
-## 2 sens    binary     0.617    10 0.0179 
+## 2 sens    binary     0.617    10 0.0179
 ## 3 spec    binary     0.737    10 0.00677
 ```
 
@@ -407,7 +408,7 @@ tree_rs %>%
 ##   .metric .estimator  mean     n std_err
 ##   <chr>   <chr>      <dbl> <int>   <dbl>
 ## 1 roc_auc binary     0.723    10 0.00578
-## 2 sens    binary     0.642    10 0.0182 
+## 2 sens    binary     0.642    10 0.0182
 ## 3 spec    binary     0.745    10 0.00941
 ```
 
