@@ -4,12 +4,12 @@ slug: "Beginners-Guide-to-Travis"
 date: 2016-05-20
 excerpt: "The Blind Leading the Blind"
 tags: [rstats]
+categories: [rstats]
 ---
 
 Have you seen all those attractive green badges on other people's R packages and thought, "*I* want a lovely green badge!"
 
-<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">Always a nice feeling when Travis manages to actually build. <a href="https://twitter.com/hashtag/runconf16?src=hash">#runconf16</a> <a href="https://t.co/7qZfH2OEij">pic.twitter.com/7qZfH2OEij</a></p>&mdash; Julia Silge (@juliasilge) <a href="https://twitter.com/juliasilge/status/716034756509507584">April 1, 2016</a></blockquote>
-<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+{{< tweet 716034756509507584 >}}
 
 OF COURSE YOU DO. Well, let's give it a shot, because today I am going to attempt a beginner's guide to using Travis-CI for continuous integration for R packages. It is going to be a *beginner's* guide because that is all I could possibly write; my knowledge and experience with Travis is limited. Sometimes it can be helpful to have someone walk you through something new that she herself has only recently come to grips with, though, so here we go!
 
