@@ -23,6 +23,12 @@ social:
 - icon: linkedin
   icon_pack: fab
   link: https://www.linkedin.com/in/juliasilge/
+- icon: orcid
+  icon_pack: ai
+  link: https://orcid.org/0000-0002-3671-836X
+- icon: google-scholar
+  icon_pack: ai
+  link: https://scholar.google.com/citations?hl=en&user=lQBVIkkAAAAJ
 superuser: true
 title: Julia Silge
 ---
