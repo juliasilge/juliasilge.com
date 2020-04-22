@@ -68,7 +68,7 @@ How are the fines distributed?
 ```{r}
 gdpr_raw %>%
   ggplot(aes(price + 1)) +
-  geom_histogram(color = "midnightblue", alpha = 0.7) +
+  geom_histogram(fill = "midnightblue", alpha = 0.7) +
   scale_x_log10(labels = scales::dollar_format(prefix = "€")) +
   labs(x = "GDPR fine (EUR)", y = "GDPR violations")
 ```
