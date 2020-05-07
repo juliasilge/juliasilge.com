@@ -2,7 +2,20 @@
 title: "PCA and the #TidyTuesday best hip hop songs ever"
 date: 2020-04-14
 slug: "best-hip-hop"
-tags: [rstats,tidymodels]
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: ''
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
 ---
 
 ```{r setup, include=FALSE}
@@ -230,7 +243,7 @@ tibble(
     percent_var = percent_variation       ## use cumsum() to find cumulative, if you prefer
 ) %>%         
     mutate(component = fct_inorder(component)) %>%
-    ggplot(aes(component, percent_variation)) +
+    ggplot(aes(component, percent_var)) +
     geom_col() +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(x = NULL, y = "Percent variance explained by each PCA component")

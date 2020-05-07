@@ -2,10 +2,20 @@
 title: "PCA and the #TidyTuesday best hip hop songs ever"
 date: 2020-04-14
 slug: "best-hip-hop"
-tags: [rstats,tidymodels]
-categories: [rstats,tidymodels]
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: ''
+featured: no
 image:
+  caption: ''
+  focal_point: ''
   preview_only: true
+projects: []
 ---
 
 
@@ -65,9 +75,9 @@ rankings %>%
   )
 ```
 
-<img src="/blog/2020/2020-04-14-best-hip-hop_files/figure-html/unnamed-chunk-3-1.png" width="2400" />
+<img src="/blog/best-hip-hop/index_files/figure-html/unnamed-chunk-3-1.png" width="2400" />
 
-To see more examples of EDA for this dataset, you can see the great work [that folks share on Twitter](https://twitter.com/hashtag/tidytuesday)! ✨ Next, let's get audio features from the Spotify API.
+To see more examples of EDA for this dataset, you can see the great work [that folks share on Twitter](https://twitter.com/hashtag/tidytuesday)! ✨ Next, let's get audio features from the Spotify API. 
 
 ## Get audio features
 
@@ -86,17 +96,17 @@ playlist_features
 ```
 ## # A tibble: 250 x 61
 ##    playlist_id playlist_name playlist_img playlist_owner_… playlist_owner_…
-##    <chr>       <chr>         <chr>        <chr>            <chr>
-##  1 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  2 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  3 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  4 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  5 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  6 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  7 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  8 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-##  9 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
-## 10 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923
+##    <chr>       <chr>         <chr>        <chr>            <chr>           
+##  1 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  2 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  3 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  4 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  5 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  6 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  7 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  8 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+##  9 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
+## 10 7esD007S7k… Top 250 Hiph… https://mos… tmock1923        tmock1923       
 ## # … with 240 more rows, and 56 more variables: danceability <dbl>,
 ## #   energy <dbl>, key <int>, loudness <dbl>, mode <int>, speechiness <dbl>,
 ## #   acousticness <dbl>, instrumentalness <dbl>, liveness <dbl>, valence <dbl>,
@@ -144,13 +154,13 @@ ranking_ids %>%
 
 ```
 ## # A tibble: 311 x 3
-##    title                  artist                            id
-##    <chr>                  <chr>                             <chr>
+##    title                  artist                            id                  
+##    <chr>                  <chr>                             <chr>               
 ##  1 Juicy                  The Notorious B.I.G.              5ByAIlEEnxYdvpnezg7…
 ##  2 Fight The Power        Public Enemy                      1yo16b3u0lptm6Cs7lx…
 ##  3 Shook Ones (Part II)   Mobb Deep                         4nASzyRbzL5qZQuOPjQ…
 ##  4 The Message            Grandmaster Flash & The Furious … 5DuTNKFEjJIySAyJH1y…
-##  5 Nuthin’ But A ‘G’ Tha… Dr Dre ft. Snoop Doggy Dogg       3j3mo94s22aHdrFqede…
+##  5 Nuthin’ But A ‘G’ Tha… Dr Dre ft. Snoop Doggy Dogg       4YtoipFgf4k0AfD17Zf…
 ##  6 C.R.E.A.M.             Wu-Tang Clan                      119c93MHjrDLJTApCVG…
 ##  7 93 ’Til Infinity       Souls of Mischief                 0PV1TFUMTBrDETzW6KQ…
 ##  8 Passin’ Me By          The Pharcyde                      4G3dZN9o3o2X4VKwt4C…
@@ -176,8 +186,8 @@ ranking_features
 
 ```
 ## # A tibble: 4 x 3
-##   id_group data              audio_features
-##      <dbl> <list>            <list>
+##   id_group data              audio_features    
+##      <dbl> <list>            <list>            
 ## 1        0 <tibble [79 × 1]> <tibble [79 × 18]>
 ## 2        1 <tibble [80 × 1]> <tibble [80 × 18]>
 ## 3        2 <tibble [80 × 1]> <tibble [80 × 18]>
@@ -206,7 +216,7 @@ ranking_df
 ##  2 Figh… Publi…    100  1989        0.797  0.582     2   -13.0      1
 ##  3 Shoo… Mobb …     94  1995        0.637  0.878     6    -5.51     1
 ##  4 The … Grand…     90  1982        0.947  0.607    10   -10.6      0
-##  5 Nuth… Dr Dr…     84  1992        0.766  0.559    11    -7.03     0
+##  5 Nuth… Dr Dr…     84  1992        0.801  0.699    11    -8.18     0
 ##  6 C.R.… Wu-Ta…     62  1993        0.479  0.549    11   -10.6      0
 ##  7 93 ’… Souls…     50  1993        0.59   0.672     1   -11.8      1
 ##  8 Pass… The P…     48  1992        0.759  0.756     4    -8.14     0
@@ -232,7 +242,7 @@ ranking_df %>%
   theme_plex()
 ```
 
-<img src="/blog/2020/2020-04-14-best-hip-hop_files/figure-html/unnamed-chunk-8-1.png" width="3000" />
+<img src="/blog/best-hip-hop/index_files/figure-html/unnamed-chunk-8-1.png" width="3000" />
 
 Louder songs have higher energy, and older songs tend to be more danceable and have higher valence (i.e. be more "happy").
 
@@ -248,35 +258,35 @@ summary(ranking_lm)
 ```
 
 ```
-##
+## 
 ## Call:
 ## lm(formula = log(points) ~ ., data = .)
-##
+## 
 ## Residuals:
-##      Min       1Q   Median       3Q      Max
-## -1.74734 -0.57186  0.04495  0.43141  2.66998
-##
+##      Min       1Q   Median       3Q      Max 
+## -1.68521 -0.58721  0.05728  0.44134  2.63178 
+## 
 ## Coefficients:
-##                   Estimate Std. Error t value Pr(>|t|)
-## (Intercept)      64.603559  13.723105   4.708 3.95e-06 ***
-## year             -0.031233   0.006744  -4.631 5.58e-06 ***
-## danceability      0.088747   0.434773   0.204    0.838
-## energy            0.034760   0.433454   0.080    0.936
-## key               0.004287   0.013739   0.312    0.755
-## loudness          0.035091   0.022764   1.541    0.124
-## mode             -0.078376   0.103268  -0.759    0.449
-## speechiness      -0.182031   0.408076  -0.446    0.656
-## acousticness      0.442155   0.300148   1.473    0.142
-## instrumentalness  0.621053   0.622244   0.998    0.319
-## liveness          0.140567   0.262802   0.535    0.593
-## valence          -0.336922   0.286438  -1.176    0.240
-## tempo             0.001175   0.001637   0.718    0.473
+##                    Estimate Std. Error t value Pr(>|t|)    
+## (Intercept)      68.2251604 13.9295818   4.898 1.64e-06 ***
+## year             -0.0329381  0.0068396  -4.816 2.40e-06 ***
+## danceability      0.0068425  0.4409221   0.016    0.988    
+## energy           -0.0487288  0.4372164  -0.111    0.911    
+## key               0.0091604  0.0137126   0.668    0.505    
+## loudness          0.0360689  0.0226039   1.596    0.112    
+## mode             -0.0690822  0.1041311  -0.663    0.508    
+## speechiness      -0.2697032  0.4118937  -0.655    0.513    
+## acousticness      0.4754636  0.3003998   1.583    0.115    
+## instrumentalness -0.6862222  0.8101330  -0.847    0.398    
+## liveness          0.0811289  0.2604150   0.312    0.756    
+## valence          -0.3930333  0.2859187  -1.375    0.170    
+## tempo             0.0008642  0.0016334   0.529    0.597    
 ## ---
 ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-##
-## Residual standard error: 0.8285 on 280 degrees of freedom
-## Multiple R-squared:  0.09559,	Adjusted R-squared:  0.05683
-## F-statistic: 2.466 on 12 and 280 DF,  p-value: 0.004471
+## 
+## Residual standard error: 0.8288 on 280 degrees of freedom
+## Multiple R-squared:  0.09513,	Adjusted R-squared:  0.05635 
+## F-statistic: 2.453 on 12 and 280 DF,  p-value: 0.004697
 ```
 
 We only have evidence for year being important in the critic ratings from this model. We know that some of the features are at least a bit correlated, though, so let's use PCA.
@@ -302,18 +312,18 @@ ranking_prep
 
 ```
 ## Data Recipe
-##
+## 
 ## Inputs:
-##
+## 
 ##       role #variables
 ##         id          2
 ##    outcome          1
 ##  predictor         12
-##
+## 
 ## Training data contained 293 data points and no missing data.
-##
+## 
 ## Operations:
-##
+## 
 ## Log transformation on points [trained]
 ## Centering and scaling for year, danceability, energy, key, loudness, ... [trained]
 ## PCA extraction with year, danceability, energy, key, loudness, ... [trained]
@@ -343,7 +353,7 @@ tidied_pca %>%
   labs(y = NULL)
 ```
 
-<img src="/blog/2020/2020-04-14-best-hip-hop_files/figure-html/unnamed-chunk-11-1.png" width="1800" />
+<img src="/blog/best-hip-hop/index_files/figure-html/unnamed-chunk-11-1.png" width="1800" />
 
 Let's zoom in on the first four components.
 
@@ -367,7 +377,7 @@ tidied_pca %>%
   )
 ```
 
-<img src="/blog/2020/2020-04-14-best-hip-hop_files/figure-html/unnamed-chunk-12-1.png" width="2400" />
+<img src="/blog/best-hip-hop/index_files/figure-html/unnamed-chunk-12-1.png" width="2400" />
 
 So PC1 is mostly about age and danceability, PC2 is mostly energy and loudness, PC3 is mostly speechiness, and PC4 is about the musical characteristics (actual key and major vs. minor key).
 
@@ -381,7 +391,7 @@ juice(ranking_prep) %>%
   geom_text(check_overlap = TRUE, family = "IBMPlexSans")
 ```
 
-<img src="/blog/2020/2020-04-14-best-hip-hop_files/figure-html/unnamed-chunk-13-1.png" width="3000" />
+<img src="/blog/best-hip-hop/index_files/figure-html/unnamed-chunk-13-1.png" width="3000" />
 
 - Older, more danceable songs are to the left.
 - Higher energy, louder songs are towards the top.
@@ -401,13 +411,13 @@ tibble(
   percent_var = percent_variation ## use cumsum() to find cumulative, if you prefer
 ) %>%
   mutate(component = fct_inorder(component)) %>%
-  ggplot(aes(component, percent_variation)) +
+  ggplot(aes(component, percent_var)) +
   geom_col() +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(x = NULL, y = "Percent variance explained by each PCA component")
 ```
 
-<img src="/blog/2020/2020-04-14-best-hip-hop_files/figure-html/unnamed-chunk-14-1.png" width="2400" />
+<img src="/blog/best-hip-hop/index_files/figure-html/unnamed-chunk-14-1.png" width="2400" />
 
 
 And finally, let's fit the same kind of model we fit before, but now with `juice(ranking_prep)`. This approach really emphasizes how recipes can be used for data preprocessing. Notice how `juice(ranking_prep)` has already taken the log of `points`, has the component values ready to go, etc.
@@ -419,18 +429,18 @@ juice(ranking_prep)
 
 ```
 ## # A tibble: 293 x 8
-##    title          artist              points     PC1    PC2    PC3    PC4    PC5
-##    <fct>          <fct>                <dbl>   <dbl>  <dbl>  <dbl>  <dbl>  <dbl>
-##  1 Juicy          The Notorious B.I.…   4.94 -0.904   1.22  -0.964  0.629 -1.21
-##  2 Fight The Pow… Public Enemy          4.61 -0.888  -1.45   0.581  0.684  1.84
-##  3 Shook Ones (P… Mobb Deep             4.54  0.0894  1.23  -0.769  0.737  0.168
-##  4 The Message    Grandmaster Flash …   4.50 -3.44    0.122 -0.122 -0.357  0.334
-##  5 Nuthin’ But A… Dr Dre ft. Snoop D…   4.43 -3.10   -1.85   1.91  -5.89  -5.26
-##  6 C.R.E.A.M.     Wu-Tang Clan          4.13  0.151  -2.15  -2.25  -0.161 -2.47
-##  7 93 ’Til Infin… Souls of Mischief     3.91  0.413  -0.746 -0.450  2.18  -0.999
-##  8 Passin’ Me By  The Pharcyde          3.87 -0.974   0.307 -0.616 -0.282  1.15
-##  9 N.Y. State Of… Nas                   3.83 -0.739   2.04  -1.28  -0.668  0.705
-## 10 Dear Mama      2Pac                  3.74 -0.202  -0.805  1.17   0.101 -0.107
+##    title        artist             points     PC1    PC2     PC3    PC4      PC5
+##    <fct>        <fct>               <dbl>   <dbl>  <dbl>   <dbl>  <dbl>    <dbl>
+##  1 Juicy        The Notorious B.I…   4.94 -0.987   0.904 -1.10    1.16   5.46e-1
+##  2 Fight The P… Public Enemy         4.61 -0.837  -1.42   0.686   0.184 -1.78e+0
+##  3 Shook Ones … Mobb Deep            4.54  0.0153  1.06  -0.929   0.681 -3.27e-1
+##  4 The Message  Grandmaster Flash…   4.50 -3.42    0.138 -0.0333 -0.653 -2.63e-4
+##  5 Nuthin’ But… Dr Dre ft. Snoop …   4.43 -1.90    0.405 -0.629  -1.18   8.27e-2
+##  6 C.R.E.A.M.   Wu-Tang Clan         4.13  0.190  -2.25  -1.94   -0.245  2.80e+0
+##  7 93 ’Til Inf… Souls of Mischief    3.91  0.413  -0.892 -0.576   1.93   1.20e+0
+##  8 Passin’ Me … The Pharcyde         3.87 -0.990   0.289 -0.607  -0.615 -1.01e+0
+##  9 N.Y. State … Nas                  3.83 -0.819   1.93  -1.41   -0.736 -5.23e-1
+## 10 Dear Mama    2Pac                 3.74 -0.143  -0.698  1.19    0.349 -4.05e-1
 ## # … with 283 more rows
 ```
 
@@ -443,28 +453,28 @@ summary(pca_fit)
 ```
 
 ```
-##
+## 
 ## Call:
 ## lm(formula = points ~ ., data = .)
-##
+## 
 ## Residuals:
-##      Min       1Q   Median       3Q      Max
-## -1.59912 -0.57245  0.03614  0.41393  2.88917
-##
+##      Min       1Q   Median       3Q      Max 
+## -1.55257 -0.58620  0.04886  0.39583  2.89017 
+## 
 ## Coefficients:
-##              Estimate Std. Error t value Pr(>|t|)
-## (Intercept)  1.925161   0.049480  38.908   <2e-16 ***
-## PC1         -0.080409   0.034782  -2.312   0.0215 *
-## PC2          0.032472   0.037961   0.855   0.3930
-## PC3         -0.057849   0.042559  -1.359   0.1751
-## PC4         -0.051924   0.045053  -1.153   0.2501
-## PC5          0.006719   0.046864   0.143   0.8861
+##             Estimate Std. Error t value Pr(>|t|)    
+## (Intercept)  1.92516    0.04944  38.936   <2e-16 ***
+## PC1         -0.07547    0.03487  -2.165   0.0312 *  
+## PC2          0.03540    0.03725   0.950   0.3428    
+## PC3         -0.07129    0.04207  -1.695   0.0912 .  
+## PC4         -0.03100    0.04520  -0.686   0.4934    
+## PC5         -0.04195    0.04749  -0.883   0.3778    
 ## ---
 ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-##
-## Residual standard error: 0.847 on 287 degrees of freedom
-## Multiple R-squared:  0.0313,	Adjusted R-squared:  0.01442
-## F-statistic: 1.855 on 5 and 287 DF,  p-value: 0.1023
+## 
+## Residual standard error: 0.8463 on 287 degrees of freedom
+## Multiple R-squared:  0.03273,	Adjusted R-squared:  0.01588 
+## F-statistic: 1.942 on 5 and 287 DF,  p-value: 0.08738
 ```
 
 
