@@ -1,0 +1,154 @@
+---
+title: "tidylo is now on CRAN! 🎉"
+author: Julia Silge
+date: '2020-05-26'
+slug: tidylo-cran
+categories:
+  - rstats
+tags:
+  - rstats
+subtitle: ''
+summary: "Measure how the frequency of some feature differs across some group or set, using the weighted log odds."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+I am very pleased to announce that [tidylo](https://github.com/juliasilge/tidylo), a package for weighted log odds using tidy data principles, is [now on CRAN](https://cran.r-project.org/package=tidylo)! `r emo::ji("tada")` I would like to send my warmest thanks to my collaborators [Alex Hayes](https://www.alexpghayes.com/) and [Tyler Schnoebelen](https://www.letslanguage.org/) for their helpful contributions.
+
+You can now install the released version of tidylo from [CRAN](https://CRAN.R-project.org) with:
+
+```{r eval=FALSE}
+install.packages("tidylo")
+```
+
+A log odds ratio is a way of expressing probabilities, and we can weight a log odds ratio so that our implementation does a better job dealing with different features having different counts. In particular, we use the method outlined in [Monroe, Colaresi, and Quinn (2008)](https://doi.org/10.1093/pan/mpn018) for posterior log odds ratios, assuming a multinomial model with a Dirichlet prior. The default prior is **estimated from the data itself**, an empirical Bayesian approach, but an uninformative prior is also available.
+
+Text analysis is a main motivator for this implementation of weighted log odds, because natural language exhibits an approximately power distribution for word counts with some words counted many times and others counted only a few times. Check out both the [README](https://github.com/juliasilge/tidylo) and the [package vignette](https://cran.r-project.org/web/packages/tidylo/vignettes/tidy_log_odds.html) for examples using text mining. However, this weighted log odds approach is a general one for measuring how much more likely one feature (any kind of feature, not just a word or bigram) is to be associated than another for some set or group (any kind of set, not just a document or book). 
+
+## Cocktail ingredients
+
+To demonstrate this, let's examine [this week's #TidyTuesday dataset of cocktail recipes](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-05-26/readme.md), focusing on the ingredients in the cocktails and the type of glasses `r emo::ji("cocktail")` the cocktails are served in. This is a good fit for the weighted log odds approach because some ingredients (like vodka) are _much_ more common than others (like tabasco sauce). Which ingredients are more likely to be used with which type of cocktail glass, using a prior estimated from the data itself? By weighting using empirical Bayes estimation, we take into account the uncertainty in our measurements and acknowledge that we are more certain when we've counted something a lot of times and less certain when we've counted something only a few times. When weighting by the prior in this way, we focus on differences that are more likely to be real, given the evidence that we have.
+
+Let's convert both the cocktail `glass` and `ingredient` columns to lower case (because there are some differences in capitalization across rows), and count up totals for each combination.
+
+```{r}
+library(tidyverse)
+library(tidylo)
+library(tidytuesdayR)
+
+tuesdata <- tt_load(2020, week = 22)
+cocktails <- tuesdata$cocktails
+
+cocktail_counts <- cocktails %>%
+  mutate(glass = str_to_lower(glass),
+         ingredient = str_to_lower(ingredient)) %>%
+  count(glass, ingredient, sort = TRUE)
+
+cocktail_counts
+```
+
+Now let's use the `bind_log_odds()` function from the tidylo package to find the weighted log odds for each bigram. The weighted log odds computed by this function are also [z-scores](https://en.wikipedia.org/wiki/Standard_score) for the log odds; this quantity is useful for comparing frequencies across categories or sets but its relationship to an odds ratio is not straightforward after the weighting. 
+
+What are the ingredients with the highest weighted log odds for these glasses?
+
+```{r}
+cocktail_log_odds <- cocktail_counts %>%
+  bind_log_odds(glass, ingredient, n) 
+
+cocktail_log_odds %>%
+  filter(n > 5) %>%
+  arrange(-log_odds_weighted)
+```
+
+We can see right away that the highest weighted log odds ingredients in the dataset are coffee, chocolate, sugar, and milk for a coffee mug. Let's create a visualization to see the highest weighted log odds ingredients for four different types of glasses.
+
+```{r, fig.width=7, fig.height=5}
+library(tidytext)
+
+glasses <- c("coffee mug", "champagne flute", "old-fashioned glass", "shot glass")
+
+cocktail_log_odds %>%
+  filter(glass %in% glasses) %>%
+  group_by(glass) %>%
+  top_n(10) %>%
+  ungroup %>%
+  mutate(ingredient = reorder_within(ingredient, log_odds_weighted, glass)) %>%
+  ggplot(aes(log_odds_weighted, ingredient, fill = glass)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~glass, scales = "free_y") +
+  scale_y_reordered() +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(y = NULL, x = "Weighted log odds (empirical Bayes)")
+```
+
+OH BOY, seeing all these ingredients mixed up like this makes me feel a little queasy. `r emo::ji("vomit")` These are the ingredients most likely to be used with each glass, assuming the prior estimated from the data itself. Notice also that the ingredients for the coffee mug are the **most** distinctive, and the ingredients for the old-fashioned glass are the **least** distinctive. 
+
+Perhaps we want to understand one type of glass in more detail, and examine the relationship between weighted log odds and how common an ingredient is. Let's look at the "cocktail glass", which you might know as a martini glass.
+
+```{r}
+library(ggrepel)
+cocktail_log_odds %>%
+  filter(glass == "cocktail glass",
+         n > 5) %>%
+  ggplot(aes(n, log_odds_weighted, label = ingredient)) +
+  geom_hline(yintercept = 0, color = "gray50", lty = 2, size = 1.5) +
+  geom_point(alpha = 0.8, color = "midnightblue") +
+  geom_text_repel(family = "IBMPlexSans") +
+  scale_x_log10() +
+  labs(x = "Number of cocktails in dataset",
+       y = "Weighted log odds (empirical Bayes)",
+       title = "What ingredients are most specific to a cocktail/martini glass?",
+       subtitle = "Sweet & dry vermouth are among the high log odds ingredients\nGin is both very common and likely to be used with a cocktail glass")
+```
+
+Vodka is common, but it is used among so many different kinds of glasses that is does not have a high weighted log odds for a cocktail/martini glass.
+
+## Weighty matters
+
+By default, the prior in tidylo is estimated from the data itself as shown with the cocktail ingredients, an empirical Bayes approach, but an uninformative prior is also available. To demonstrate this, let's look at everybody's favorite data about cars. `r emo::ji("car")` What do we know about the relationship between number of gears and engine shape `vs`?
+
+```{r gear_counts}
+gear_counts <- mtcars %>%
+  count(vs, gear)
+
+gear_counts
+```
+
+Now we can use `bind_log_odds()` to find the weighted log odds for each number of gears and engine shape. First, let's use the default empirical Bayes prior. It regularizes the values.
+
+```{r dependson="gear_counts"}
+regularized <- gear_counts %>%
+  bind_log_odds(vs, gear, n)
+
+regularized
+```
+
+For engine shape `vs = 0`, having three gears has the highest weighted log odds while for engine shape `vs = 1`, having four gears has the highest weighted log odds. This dataset is small enough that you can look at the count data and see how this is working. 
+
+Now, let's use the uninformative prior, and compare to the unweighted log odds. These log odds will be farther from zero than the regularized estimates.
+
+```{r dependson="gear_counts"}
+unregularized <- gear_counts %>%
+  bind_log_odds(vs, gear, n, uninformative = TRUE, unweighted = TRUE)
+
+unregularized
+```
+
+Most importantly, you can notice that this approach is useful both for text data, for our example of cocktail ingredients `r emo::ji("whisky")`, but also more generally whenever you have counts in some kind of groups or sets and you want to find what feature is more likely to come from a group, compared to the other groups.
+
