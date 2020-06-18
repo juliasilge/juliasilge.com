@@ -30,7 +30,7 @@ library(silgelib)
 theme_set(theme_plex())
 ```
 
-This week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) reflects on Juneteenth, the date when the law abolishing slavery in the United States was finally enforced throughout the American South, and specifically Texas. My own education as a white woman in the United States has been gravely lacking in the history of enslaved people, their experiences, and their impact and legacy; I'm glad to spend some time in this screencast understanding more about the forced transport of African people using the [Slave Voyages African Names](https://www.slavevoyages.org/resources/about#african-names-database/0/en/) database.
+This week's [`#TidyTuesday` datasets](https://github.com/rfordatascience/tidytuesday) reflect on Juneteenth, the date when the law abolishing slavery in the United States was finally enforced throughout the American South, and specifically Texas. My own education as a white woman in the United States has been gravely lacking in the history of enslaved people, their experiences, and their impact and legacy; I'm glad to spend some time in this screencast understanding more about the forced transport of African people using the [Slave Voyages African Names](https://www.slavevoyages.org/resources/about#african-names-database/0/en/) database.
 
 ```{r, echo=FALSE}
 blogdown::shortcode("youtube", "z4oQh_5YMVk")
