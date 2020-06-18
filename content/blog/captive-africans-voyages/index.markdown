@@ -130,7 +130,10 @@ african_names %>%
   ggplot(aes(year_arrival)) +
   geom_histogram(bins = 20, fill = "midnightblue", alpha = 0.7) +
   scale_y_continuous(labels = scales::comma_format()) +
-  labs(y = "Number of liberated individuals")
+  labs(
+    y = "Number of liberated individuals",
+    x = NULL
+  )
 ```
 
 <img src="/blog/captive-africans-voyages/index_files/figure-html/unnamed-chunk-5-1.png" width="2400" />
