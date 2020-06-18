@@ -1,0 +1,236 @@
+---
+title: "Impute missing data for #TidyTuesday voyages of captive Africans with tidymodels"
+author: Julia Silge
+date: '2020-06-17'
+slug: captive-africans-voyages
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Understand more about the forced transport of African people using the Slave Voyages database."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+This week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) reflects on Juneteenth, the date when the law abolishing slavery in the United States was finally enforced throughout the American South, and specifically Texas. My own education as a white woman in the United States has been gravely lacking in the history of enslaved people, their experiences, and their impact and legacy; I'm glad to spend some time in this screencast understanding more about the forced transport of African people using the [Slave Voyages African Names](https://www.slavevoyages.org/resources/about#african-names-database/0/en/) database.
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "z4oQh_5YMVk")
+```
+
+</br>
+
+You can find my other [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) framework as well, if you are interested.
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+
+## Explore the data
+
+Our modeling goal is to estimate whether some characteristics of the people trafficked by enslavers changed [over the last several decades of the trans-Atlantic slave trade](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-06-16/readme.md). Missing data can be a challenge with historical data, so we'll use imputation.
+
+Let's read in the data on African names and use [skimr](https://docs.ropensci.org/skimr/) to see what's there.
+
+```{r, render = knitr::normal_print}
+african_names <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-06-16/african_names.csv')
+
+skimr::skim(african_names)
+```
+
+There is data missing in both the gender and age variables, two I am interested in.
+
+This is a dataset of individual people who were liberated from slave ships. Where did the people in this dataset _leave_ their ships?
+
+```{r}
+african_names %>%
+  count(port_disembark, sort = TRUE) %>%
+  kable()
+```
+
+Most of the freed captives in this database were liberated in either Freetown, Sierra Leone (so on the eastern side of the Atlantic) or Havana, Cuba (on the western side). Both cities had tribunals/courts to judge ships seized by anti-slaving patrols after European countries outlawed or restricted slavery.
+
+Where did these people start their forced journeys?
+
+```{r}
+african_names %>%
+  add_count(port_embark) %>%
+  mutate(port_embark = case_when(n < 4000 ~ "Other",
+                                 TRUE ~ port_embark)) %>%
+  ggplot(aes(port_embark, year_arrival, fill = port_embark)) +
+  geom_boxplot(alpha = 0.4, show.legend = FALSE) +
+  labs(x = NULL, y = "Year")
+```
+
+When is this data from?
+
+```{r}
+african_names %>%
+  ggplot(aes(year_arrival)) +
+  geom_histogram(bins = 20, fill = "midnightblue", alpha = 0.7) +
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(y = "Number of liberated individuals")
+```
+
+
+What is the pattern of missing data?
+
+```{r}
+library(naniar)
+
+african_names %>%
+  select(gender, age, height, year_arrival) %>% 
+  gg_miss_upset()
+```
+
+Gender has the highest proportion of missing data, and there is not much data missing from the `age` column. Fortunately for our attempt to impute missing values, not many rows have all three of these missing.
+
+What is the relationship between gender and year of arrival?
+
+```{r}
+african_names %>%
+  ggplot(aes(gender, year_arrival, fill = gender)) +
+  geom_boxplot(alpha = 0.4, show.legend = FALSE) +
+  labs(x = NULL, y = "Year")
+```
+
+Gender was coded as both man/woman and boy/girl, but there is a fair amount of overlap in ages (children coded as "man", for example).
+
+```{r}
+african_names %>%
+  ggplot(aes(gender, age, fill = gender)) +
+  geom_boxplot(alpha = 0.4, show.legend = FALSE) +
+  labs(x = NULL, y = "Year")
+```
+
+What is the relationship between age and year of arrival?
+
+```{r}
+african_names %>%
+  filter(year_arrival < 1850) %>%
+  group_by(year_arrival) %>%
+  summarise(age = mean(age, na.rm = TRUE)) %>%
+  ggplot(aes(year_arrival, age)) +
+  geom_line(alpha = 0.6, size = 1.5) +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(x = NULL, y = "Mean age")
+```
+
+Overall, the age is drifting up slightly, although the previous plot on boys/girls/men/women calls this into question. We can use modeling to explore this better.
+
+One of the most unique and valuable characteristics of this dataset is the names. We can make a scatterplot to understand more about the distribution of ages and year of arrival.
+
+```{r, fig.width=10, fig.height=7}
+library(ggrepel)
+
+african_names %>%
+  group_by(name) %>%
+  summarise(n = n(),
+            age = mean(age, na.rm = TRUE),
+            year_arrival = mean(year_arrival, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(-n) %>%
+  filter(n > 30) %>%
+  ggplot(aes(year_arrival, age)) +
+  geom_text_repel(aes(label = name), size = 3, family = "IBMPlexSans") +
+  geom_point(aes(size = n), color = "midnightblue", alpha = 0.7) +
+  labs(x = "Mean year of arrival", y = "Mean age", 
+       size = "Number of people",
+       title = "Age and year of arrival for most common names of transported captives",
+       caption = "African Names Database from slavevoyages.org")
+```
+
+I'm looking forward to how else folks explore this #TidyTuesday dataset and share on [Twitter](https://twitter.com/hashtag/TidyTuesday).
+
+## Impute missing data
+
+Our modeling goal is to estimate whether some characteristics, say age and gender, of trafficked Africans changed during this time period. Some data is missing, so let's try to impute gender and age, with the help of height. When we do imputation, we aren't adding new information to our dataset, but we are using the patterns in our dataset so that we don't have to throw away the data that have some variables missing.
+
+First, let's filter to only the data from before 1850 and recode the `gender` variable.
+
+```{r}
+liberated_df <- african_names %>%
+  filter(year_arrival < 1850) %>%
+  mutate(gender = case_when(gender == "Boy" ~ "Man",
+                            gender == "Girl" ~ "Woman",
+                            TRUE ~ gender)) %>%
+  mutate_if(is.character, factor)
+
+liberated_df
+```
+
+Next, let's impute the missing data using a recipe.
+
+```{r}
+library(recipes)
+
+impute_rec <- recipe(year_arrival ~ gender + age + height, data = liberated_df) %>%
+  step_meanimpute(height) %>%
+  step_knnimpute(all_predictors())
+```
+
+Let's walk through the steps in this recipe.
+
+- First, we must tell the `recipe()` what's going on with our model what data we are using (notice we did not split into training and testing, because of our specific modeling goals).
+- Next, we impute the missing values for height with the mean value for height. Height has a low value of missingness, and we are only going to use it to impute age and gender, not for modeling.
+- Next, we impute the missing values for age and gender using a nearest neighbors model with all three predictors.
+
+Once we have the recipe defined, we can estimate the parameters needed to apply it using `prep()`. In this case, that means finding the mean for height (fast) and training the nearest neighbor model to find gender and age (not so fast). Then we can use `juice()` to get that imputed data back out. (If we wanted to apply the recipe to other data, like new data we hadn't seen before, [we would use `bake()` instead](https://stackoverflow.com/questions/62189885/what-is-the-difference-among-prep-bake-juice-in-the-r-package-recipes/62205555#62205555).)
+
+
+```{r}
+imputed <- prep(impute_rec) %>% juice()
+```
+
+How did the imputation turn out?
+
+```{r}
+summary(liberated_df$age)
+summary(imputed$age)
+
+summary(liberated_df$gender)
+summary(imputed$gender)
+```
+
+No more `NA` values, and the distributions look about the same. I like to keep in mind that the point of imputation like this is to be able to use the information we have in the dataset without throwing it away, which feels especially important when dealing with historical data on individuals who experienced enslavement.
+
+## Fit a model
+
+The distribution of year of arrival was a bit wonky, so that is good to keep in mind when training a linear model.
+
+```{r}
+fit_lm <- lm(year_arrival ~ gender + age, data = imputed)
+```
+
+We can check out the model results.
+
+```{r}
+summary(fit_lm)
+tidy(fit_lm) %>%
+  kable(digits = 3)
+```
+
+During the years (about 1810 to 1850) included here, as time passed, there were some gradual shifts in the population of who was found on (i.e. liberated from) these slave ships. 
+
+- There is evidence for a modest shift to younger ages as time passed. (The plot showing increasing age with time was, it turns out, [an example of Simpson's paradox](https://en.wikipedia.org/wiki/Simpson%27s_paradox).)
+- In the earlier years, there were more proportionally more women while in the later years, there were proportionally more men.
+
+I am very open to feedback on how to engage on these topics better, especially from folks who are personally impacted by this part of our history.
