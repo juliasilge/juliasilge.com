@@ -22,7 +22,7 @@ projects: []
 
 
 
-Lately I've been publishing [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) framework, from first steps in modeling to how to evaluate complex models. Today's screencast focuses on [bagging](https://en.wikipedia.org/wiki/Bootstrap_aggregating) using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on astronaut missions. 👨‍🚀
+Lately I've been publishing [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) framework, from first steps in modeling to how to evaluate complex models. Today's screencast focuses on [bagging](https://en.wikipedia.org/wiki/Bootstrap_aggregating) using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on astronaut missions. 👩‍🚀
 
 <!--html_preserve-->{{% youtube "rzfTA3xi-W0" %}}<!--/html_preserve-->
 
@@ -89,11 +89,14 @@ astronauts_df <- astronauts %>%
     name, mission_title, hours_mission,
     military_civilian, occupation, year_of_mission, in_orbit
   ) %>%
-  mutate(in_orbit = case_when(
-    str_detect(in_orbit, "^Salyut") ~ "Salyut",
-    str_detect(in_orbit, "^STS") ~ "STS",
-    TRUE ~ in_orbit
-  )) %>%
+  mutate(
+    in_orbit = case_when(
+      str_detect(in_orbit, "^Salyut") ~ "Salyut",
+      str_detect(in_orbit, "^STS") ~ "STS",
+      TRUE ~ in_orbit
+    ),
+    occupation = str_to_lower(occupation)
+  ) %>%
   filter(hours_mission > 0) %>%
   mutate(hours_mission = log(hours_mission)) %>%
   na.omit()

@@ -76,7 +76,8 @@ astronauts_df <- astronauts %>%
            military_civilian, occupation, year_of_mission, in_orbit) %>%
     mutate(in_orbit = case_when(str_detect(in_orbit, "^Salyut") ~ "Salyut",
                                 str_detect(in_orbit, "^STS") ~ "STS",
-                                TRUE ~ in_orbit)) %>%
+                                TRUE ~ in_orbit),
+           occupation = str_to_lower(occupation)) %>%
     filter(hours_mission > 0) %>%
     mutate(hours_mission = log(hours_mission)) %>%
     na.omit()
