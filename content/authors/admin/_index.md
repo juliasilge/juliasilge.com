@@ -35,7 +35,7 @@ title: Julia Silge
 
 My name is Julia Silge and I am a data scientist and software engineer at RStudio where I work on [open source modeling tools](https://www.tidymodels.org/). My last name is pronounced SILL-GHEE (two syllables, short `i`, hard `g`). I love making beautiful charts, the statistical programming language R, Jane Austen, black coffee, and red wine.
 
-I studied physics and astronomy, finishing my PhD in 2005. I worked in academia (teaching and doing research) and ed tech before moving into data science and discovering R. I am both an international speaker and a real-world practitioner focusing on data analysis and machine learning practice. I wrote a book with [my collaborator Dave](http://varianceexplained.org/) about [text mining with R](http://amzn.to/2tZkmxG). You can find me on [Twitter](https://twitter.com/juliasilge) and [GitHub](https://github.com/juliasilge). 
+I studied physics and astronomy, finishing my PhD in 2005. I worked in academia (teaching and doing research) and ed tech before moving into data science and discovering R. I am both an international speaker and a real-world practitioner focusing on data analysis and machine learning practice. I have written books with my collaborators about [text mining](http://amzn.to/2tZkmxG) and [supervised machine learning for text](https://smltar.com/) in R. You can find me on [Twitter](https://twitter.com/juliasilge) and [GitHub](https://github.com/juliasilge). 
 
 I live in Salt Lake City, UT, with my husband, three kids, and two cats.
 
