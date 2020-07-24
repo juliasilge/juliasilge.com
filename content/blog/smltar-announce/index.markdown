@@ -19,7 +19,7 @@ projects: []
 
 
 
-Today, [Emil Hvitfeldt](https://www.hvitfeldt.me/) and I led a [useR! 2020](https://user2020.r-project.org/) online tutorial on predicted modeling with text using tidy data principles. This tutorial was hosted by [R-Ladies en Argentina](https://github.com/RLadiesEnArgentina/user2020tutorial); huge thanks to the organizers for their leadership and effort in making this tutorial possible.
+Today, [Emil Hvitfeldt](https://www.hvitfeldt.me/) and I led a [useR! 2020](https://user2020.r-project.org/) online tutorial on predictive modeling with text using tidy data principles. This tutorial was hosted by [R-Ladies en Argentina](https://github.com/RLadiesEnArgentina/user2020tutorial); huge thanks to the organizers for their leadership and effort in making this tutorial possible.
 
 ![tutorial flyer](featured.png)
 
