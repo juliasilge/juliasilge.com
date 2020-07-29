@@ -1,5 +1,5 @@
 ---
-title: "Getting started with tidymodels and #TidyTuesday Palmer Penguins"
+title: "Get started with tidymodels and #TidyTuesday Palmer penguins"
 author: Julia Silge
 date: '2020-07-28'
 slug: palmer-penguins
