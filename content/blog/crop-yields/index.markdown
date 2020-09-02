@@ -22,7 +22,7 @@ projects: []
 
 
 
-Lately I've been publishing [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) framework, starting from just getting started. Today's screencast explores how to fluently apply tidy data principles to the task of building many models using with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on crop yields. 🌽
+Lately I've been publishing [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) framework, from just getting started to tuning more complex models. Today's screencast explores how to fluently apply tidy data principles to the task of building many models using with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on crop yields. 🌽
 
 <!--html_preserve-->{{% youtube "rhhuNGjj3cU" %}}<!--/html_preserve-->
 
