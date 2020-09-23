@@ -1,0 +1,338 @@
+---
+title: "Handle class imbalance in #TidyTuesday climbing expedition data with tidymodels"
+author: Julia Silge
+date: '2020-09-23'
+slug: himalayan-climbing
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Use tidymodels for feature engineering steps like imputing missing data and subsampling for class imbalance, and build predictive models to predict the probability of survival for Himalayan climbers."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+Lately I've been publishing [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) framework, from starting out with first modeling steps to tuning more complex models. Today's screencast walks through a detailed model analysis from beginning to end, with important feature engineering steps and several model types, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Himalayan climbing expeditions. `r emo::ji("mountain")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "9f6t5vaNyEM")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal is to predict the probability of an Himalayan expedition member surviving or dying [based on characteristics of the person and climbing expedition from this week's #TidyTuesday dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-09-22/readme.md). This dataset gives us the opportunity to talk about feature engineering steps like subsampling for class imbalance (many more people survive than die) and imputing missing data (lots of expedition members are missing age, for example).
+
+Let's start by reading in the data.
+
+```{r}
+library(tidyverse)
+members <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-22/members.csv')
+
+members
+```
+
+On the video, I walk through the results of `skimr::skim()`, and notice which variables have missing data, how many unique values there are for variables like citizenship or mountain peak, and so forth.
+
+How has the rate of expedition success and member death changed over time?
+
+```{r}
+members %>%
+    group_by(year = 10 * (year %/% 10)) %>%
+    summarise(died = mean(died),
+              success = mean(success)) %>%
+    pivot_longer(died:success, names_to = "outcome", values_to = "percent") %>%
+    ggplot(aes(year, percent, color = outcome)) +
+    geom_line(alpha = 0.7, size = 1.5) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    labs(x = NULL, y = "% of expedition members", color = NULL)
+```
+
+Is there a relationship between the expedition member's age and success of the expedition or death? We can use the same code but just switch out `year` for `age`.
+
+```{r}
+members %>%
+    group_by(age = 10 * (age %/% 10)) %>%
+    summarise(died = mean(died),
+              success = mean(success)) %>%
+    pivot_longer(died:success, names_to = "outcome", values_to = "percent") %>%
+    ggplot(aes(age, percent, color = outcome)) +
+    geom_line(alpha = 0.7, size = 1.5) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    labs(x = NULL, y = "% of expedition members", color = NULL)
+```
+
+Are people more likely to die on unsuccessful expeditions?
+
+```{r}
+members %>%
+    count(success, died) %>%
+    group_by(success) %>%
+    mutate(percent = scales::percent(n / sum(n))) %>%
+    kable(col.names = c("Expedition success", "Died", "Number of people", "% of people"),
+          align = "llrr")
+```
+
+We can use a similar approach to see how different the rates of death are on different peaks in the Himalayas.
+
+```{r}
+members %>%
+    filter(!is.na(peak_name)) %>%
+    mutate(peak_name = fct_lump(peak_name, prop = 0.05)) %>%
+    count(peak_name, died) %>%
+    group_by(peak_name) %>%
+    mutate(percent = scales::percent(n / sum(n))) %>%
+    kable(col.names = c("Peak", "Died", "Number of people", "% of people"),
+          align = "llrr")
+```
+
+Let's make one last exploratory plot and look at seasons. How much difference is there in survival across the four seasons?
+
+```{r}
+members %>%
+    filter(season != "Unknown") %>%
+    count(season, died) %>%
+    group_by(season) %>%
+    mutate(percent = n / sum(n),
+           died = case_when(died ~ "Died",
+                            TRUE ~ "Did not die")) %>%
+    ggplot(aes(season, percent, fill = season)) +
+    geom_col(alpha = 0.8, position = "dodge", show.legend = FALSE) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    facet_wrap(~died, scales = "free") +
+    labs(x = NULL, y = "% of expedition members")
+```
+
+There are lots more great examples of #TidyTuesday EDA out there to explore on [Twitter](https://twitter.com/hashtag/TidyTuesday)! Let's now create the dataset that we'll use for modeling by filtering on some of the variables and transforming some variables to a be factors. There are still lots of `NA` values for age but we are going to _impute_ those.
+
+```{r}
+members_df <- members %>%
+    filter(season != "Unknown", !is.na(sex), !is.na(citizenship)) %>%
+    select(peak_id, year, season, sex, age, citizenship, hired, success, died) %>%
+    mutate(died = case_when(died ~ "died",
+                            TRUE ~ "survived")) %>%
+    mutate_if(is.character, factor) %>%
+    mutate_if(is.logical, as.integer)
+
+members_df
+```
+
+## Build a model
+
+We can start by loading the tidymodels metapackage, and splitting our data into training and testing sets.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+members_split <- initial_split(members_df, strata = died)
+members_train <- training(members_split)
+members_test <- testing(members_split)
+
+```
+
+We are going to use [resampling](https://www.tmwr.org/resampling.html) to evaluate model performance, so let's get those resampled sets ready.
+
+```{r}
+set.seed(123)
+members_folds <- vfold_cv(members_train, strata = died)
+members_folds
+```
+
+Next we build a recipe for data preprocessing. 
+
+- First, we must tell the `recipe()` what our model is going to be (using a formula here) and what our training data is.
+- Next, we impute the missing values for `age` using the median age in the training data set. There are more complex [steps available for imputation](https://recipes.tidymodels.org/reference/index.html#section-step-functions-imputation), but we'll stick with a straightforward option here.
+- Next, we use `step_other()` to collapse categorical levels for peak and citizenship. Before this step, there were hundreds of values in each variable.
+- After this, we can create indicator variables for the non-numeric, categorical values, except for the outcome `died` which we need to keep as a factor.
+- Finally, there are many more people who survived their expedition than who died (thankfully) so [we will use `step_smote()` to balance the classes](https://themis.tidymodels.org/reference/step_smote.html).
+
+The object `members_rec` is a recipe that has **not** been trained on data yet (for example, which categorical levels should be collapsed has not been calculated). 
+
+```{r}
+library(themis)
+
+members_rec <- recipe(died ~ ., data = members_train) %>%
+    step_medianimpute(age) %>%
+    step_other(peak_id, citizenship) %>%
+    step_dummy(all_nominal(), -died) %>%
+    step_smote(died) 
+
+members_rec
+```
+
+We're going to use this recipe in a `workflow()` so we don't need to stress a lot about whether to `prep()` or not. If you want to explore the what the recipe is doing to your data, you can first `prep()` the recipe to estimate the parameters needed for each step and then `bake(new_data = NULL)` to pull out the training data with those steps applied.
+
+Let's compare _two_ different models, a logistic regression model and a random forest model; these are the same two models I used [in the post on the Palmer penguins](https://juliasilge.com/blog/palmer-penguins/). We start by creating the model specifications.
+
+```{r}
+glm_spec <- logistic_reg() %>% 
+    set_engine("glm") 
+
+glm_spec
+
+rf_spec <- rand_forest(trees = 1000) %>% 
+    set_mode("classification") %>%
+    set_engine("ranger") 
+
+rf_spec
+```
+
+Next let's start putting together a tidymodels `workflow()`, a helper object to help manage modeling pipelines with pieces that fit together like Lego blocks. Notice that there is no model yet: `Model: None`.
+
+```{r}
+members_wf <- workflow() %>%
+    add_recipe(members_rec)
+
+members_wf
+```
+
+Now we can add a model, and the fit to each of the resamples. First, we can fit the logistic regression model. Let's set a non-default metric set so we can add sensitivity and specificity.
+
+```{r}
+members_metrics <- metric_set(roc_auc, accuracy, sensitivity, specificity)
+
+doParallel::registerDoParallel()
+glm_rs <- members_wf %>%
+    add_model(glm_spec) %>%
+    fit_resamples(
+        resamples = members_folds,
+        metrics = members_metrics,
+        control = control_resamples(save_pred = TRUE)
+    )
+
+glm_rs
+```
+
+Second, we can fit the random forest model.
+
+```{r}
+rf_rs <- members_wf %>%
+    add_model(rf_spec) %>%
+    fit_resamples(
+        resamples = members_folds,
+        metrics = members_metrics,
+        control = control_resamples(save_pred = TRUE)
+    )
+
+rf_rs
+```
+
+We have fit each of our candidate models to our resampled training set!
+
+## Evaluate model
+
+Now let's check out how we did.
+
+```{r}
+collect_metrics(glm_rs)
+```
+
+Well, this is middling but at least mostly consistent for the positive and negative classes. The function `collect_metrics()` extracts and formats the `.metrics` column from resampling results like the ones we have here.
+
+```{r}
+collect_metrics(rf_rs)
+```
+
+The accuracy is great but that sensitivity... YIKES! The random forest model has not done a great job of learning how to recognize _both_ classes, even with our oversampling strategy. Let's dig deeper into how these models are doing to see this more. For example, how are they predicting the two classes?
+
+```{r}
+glm_rs %>%
+    conf_mat_resampled()
+
+rf_rs %>%
+    conf_mat_resampled()
+```
+
+The random forest model is quite bad at identifying which expedition members died, while the logistic regression model does about the same for both classes.
+
+We can also make an ROC curve.
+
+```{r}
+glm_rs %>%
+    collect_predictions() %>%
+    group_by(id) %>%
+    roc_curve(died, .pred_died) %>%
+    ggplot(aes(1 - specificity, sensitivity, color = id)) +
+    geom_abline(lty = 2, color = "gray80", size = 1.5) +
+    geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+    coord_equal()
+```
+
+It is finally time for us to return to the testing set. Notice that we have not used the testing set yet during this whole analysis; to compare and assess models we used resamples of the training set. Let's *fit* one more time to the training data and *evaluate* on the testing data using the function `last_fit()`.
+
+```{r}
+members_final <- members_wf %>%
+    add_model(glm_spec) %>%
+    last_fit(members_split)
+
+members_final
+```
+
+The metrics and predictions here are on the _testing_ data.
+
+```{r}
+collect_metrics(members_final)
+
+collect_predictions(members_final) %>%
+    conf_mat(died, .pred_class)
+```
+
+
+The coefficients (which we can get out using `tidy()`) have been estimated using the _training_ data. If we use `exponentiate = TRUE`, we have odds ratios.
+
+```{r}
+members_final %>%
+    pull(.workflow) %>%
+    pluck(1) %>%
+    tidy(exponentiate = TRUE) %>%
+    arrange(estimate) %>%
+    kable(digits = 3)
+```
+
+We can also visualize these results.
+
+```{r}
+members_final %>%
+    pull(.workflow) %>%
+    pluck(1) %>%
+    tidy() %>%
+    filter(term != "(Intercept)") %>%
+    ggplot(aes(estimate, fct_reorder(term, estimate))) +
+    geom_vline(xintercept = 0, color = "gray50", lty = 2, size = 1.2) +
+    geom_errorbar(aes(xmin = estimate - std.error, 
+                      xmax = estimate + std.error),
+                  width = .2, color = "gray50", alpha = 0.7) +
+    geom_point(size = 2, color = "#85144B") +
+    labs(y = NULL, x = "Coefficent from logistic regression")
+```
+
+- The features with coefficients on the positive side (like climbing in summer, being on a successful expedition, or being from the UK or US) are associated with surviving. 
+- The features with coefficients on the negative side (like climbing specific peaks including Everest, being one of the hired members of a expedition, or being a man) are associated with dying. 
+
+Remember that we have to interpret model coefficients like this in light of the predictive accuracy of our model, which was somewhat middling; there are more factors at play in who survives these expeditions than what we have accounted for in the model directly. Also note that we see evidence in this model for how dangerous it is to be a native Sherpa climber in Nepal, hired as an expedition member, as [pointed out in this week's #TidyTuesday `README`](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-09-22/readme.md).
+
+
+
