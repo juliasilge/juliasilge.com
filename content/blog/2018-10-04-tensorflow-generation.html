@@ -23,7 +23,7 @@ tags: [rstats]
 <p><a href="https://tensorflow.rstudio.com/">TensorFlow for R</a> has changed that for me. Not only is the R interface that RStudio has developed just <em>beautiful</em>, but now these fun text generation projects provide a step into understanding how these neural networks model work at all, and deal with text in particular. Let’s step through how to take the text of <em>Pride and Prejudice</em> and generate 🙌 new 🙌 Jane-Austen-esque text.</p>
 <p>This code borrows heavily from a couple of excellent sources.</p>
 <ul>
-<li><a href="https://github.com/jnolis/banned-license-plates">Jonathan Nolis’ project on offensive license plates</a> (That link is for their code; you can read a <a href="https://towardsdatascience.com/using-deep-learning-to-generate-offensive-license-plates-619b163ed937">great narrative explanation as well</a>.)</li>
+<li><a href="https://github.com/jnolis/banned-license-plates">Jacqueline Nolis’ project on offensive license plates</a> (That link is for their code; you can read a <a href="https://towardsdatascience.com/using-deep-learning-to-generate-offensive-license-plates-619b163ed937">great narrative explanation as well</a>.)</li>
 <li><a href="https://keras.rstudio.com/articles/examples/lstm_text_generation.html">RStudio’s example code for text generation</a></li>
 </ul>
 <p>Before starting, you will need to install keras so be sure to check out <a href="https://keras.rstudio.com/reference/install_keras.html">details on installation</a>.</p>
@@ -43,7 +43,7 @@ library(tokenizers)
 
 max_length &lt;- 40
 
-text &lt;- austen_books() %&gt;% 
+text &lt;- austen_books() %&gt;%
     filter(book == &quot;Pride &amp; Prejudice&quot;) %&gt;%
     pull(text) %&gt;%
     str_c(collapse = &quot; &quot;) %&gt;%
@@ -63,8 +63,8 @@ print(sprintf(&quot;Total characters: %d&quot;, length(chars)))</code></pre>
 <h2>CHOP CHOP CHOP</h2>
 <p>Next we want to cut the whole text into pieces: sequences of <code>max_length</code> characters. These will be the chunks of text that we use for training.</p>
 <pre class="r"><code>dataset &lt;- map(
-    seq(1, length(text) - max_length - 1, by = 3), 
-    ~list(sentence = text[.x:(.x + max_length - 1)], 
+    seq(1, length(text) - max_length - 1, by = 3),
+    ~list(sentence = text[.x:(.x + max_length - 1)],
           next_char = text[.x + max_length])
 )
 
@@ -76,14 +76,14 @@ dataset &lt;- transpose(dataset)</code></pre>
 <pre class="r"><code>vectorize &lt;- function(data, chars, max_length){
     x &lt;- array(0, dim = c(length(data$sentence), max_length, length(chars)))
     y &lt;- array(0, dim = c(length(data$sentence), length(chars)))
-    
+
     for(i in 1:length(data$sentence)){
         x[i,,] &lt;- sapply(chars, function(x){
             as.integer(x == data$sentence[[i]])
         })
         y[i,] &lt;- as.integer(chars == data$next_char[[i]])
     }
-    
+
     list(y = y,
          x = x)
 }
@@ -97,9 +97,9 @@ vectors &lt;- vectorize(dataset, chars, max_length)</code></pre>
     keras_model_sequential() %&gt;%
         layer_lstm(128, input_shape = c(max_length, length(chars))) %&gt;%
         layer_dense(length(chars)) %&gt;%
-        layer_activation(&quot;softmax&quot;) %&gt;% 
+        layer_activation(&quot;softmax&quot;) %&gt;%
         compile(
-            loss = &quot;categorical_crossentropy&quot;, 
+            loss = &quot;categorical_crossentropy&quot;,
             optimizer = optimizer_rmsprop(lr = 0.01)
         )
 }</code></pre>
@@ -118,19 +118,19 @@ vectors &lt;- vectorize(dataset, chars, max_length)</code></pre>
 <p>Now it’s almost time to <strong>train</strong> the model on our data. Let’s make some more functions.</p>
 <p>This one generates a phrase from a model, text, set of characters, and parameters like the maximum length of phrase and diversity, i.e. how WILD we are going to let the model be.</p>
 <pre class="r"><code>generate_phrase &lt;- function(model, text, chars, max_length, diversity){
-    
+
     # this function chooses the next character for the phrase
     choose_next_char &lt;- function(preds, chars, temperature){
         preds &lt;- log(preds) / temperature
         exp_preds &lt;- exp(preds)
         preds &lt;- exp_preds / sum(exp(preds))
-        
-        next_index &lt;- rmultinom(1, 1, preds) %&gt;% 
+
+        next_index &lt;- rmultinom(1, 1, preds) %&gt;%
             as.integer() %&gt;%
             which.max()
         chars[next_index]
     }
-    
+
     # this function takes a sequence of characters and turns it into a numeric array for the model
     convert_sentence_to_data &lt;- function(sentence, chars){
         x &lt;- sapply(chars, function(x){
@@ -138,54 +138,54 @@ vectors &lt;- vectorize(dataset, chars, max_length)</code></pre>
         })
         array_reshape(x, c(1, dim(x)))
     }
-    
+
     # the inital sentence is from the text
     start_index &lt;- sample(1:(length(text) - max_length), size = 1)
     sentence &lt;- text[start_index:(start_index + max_length - 1)]
     generated &lt;- &quot;&quot;
-    
+
     # while we still need characters for the phrase
     for(i in 1:(max_length * 20)){
-        
+
         sentence_data &lt;- convert_sentence_to_data(sentence, chars)
-        
+
         # get the predictions for each next character
         preds &lt;- predict(model, sentence_data)
-        
+
         # choose the character
         next_char &lt;- choose_next_char(preds, chars, diversity)
-        
+
         # add it to the text and continue
         generated &lt;- str_c(generated, next_char, collapse = &quot;&quot;)
         sentence &lt;- c(sentence[-1], next_char)
     }
-    
+
     generated
 }</code></pre>
 <p>Notice that we seed the first characters for the model to use for prediction with a real chunk of text from <em>Pride and Prejudice</em>.</p>
 <p>This next function fits the model to the set of vectors, and then generates phrases from the current version of the model.</p>
-<pre class="r"><code>iterate_model &lt;- function(model, text, chars, max_length, 
+<pre class="r"><code>iterate_model &lt;- function(model, text, chars, max_length,
                           diversity, vectors, iterations){
     for(iteration in 1:iterations){
-        
+
         message(sprintf(&quot;iteration: %02d ---------------\n\n&quot;, iteration))
-        
+
         fit_model(model, vectors)
-        
+
         for(diversity in c(0.2, 0.5, 1)){
-            
+
             message(sprintf(&quot;diversity: %f ---------------\n\n&quot;, diversity))
-            
-            current_phrase &lt;- 1:10 %&gt;% 
+
+            current_phrase &lt;- 1:10 %&gt;%
                 map_chr(function(x) generate_phrase(model,
                                                     text,
                                                     chars,
-                                                    max_length, 
+                                                    max_length,
                                                     diversity))
-            
+
             message(current_phrase, sep=&quot;\n&quot;)
             message(&quot;\n\n&quot;)
-            
+
         }
     }
     NULL
