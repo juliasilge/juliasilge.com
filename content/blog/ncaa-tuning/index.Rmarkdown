@@ -1,0 +1,227 @@
+---
+title: "Modeling #TidyTuesday NCAA women's basketball tournament seeds"
+author: Julia Silge
+date: '2020-10-07'
+slug: ncaa-tuning
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Tune a hyperparameter and then understand how to choose the best value afterward, using tidymodels for modeling the relationship between expected wins and tournament seed."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+Lately I've been publishing [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) framework, from starting out with first modeling steps to tuning more complex models. Today's screencast walks through how to tune and choose hyperparameters using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on NCAA women's basketball tournaments. `r emo::ji("basketball")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "krw7OkUCk84")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal is to estimate the relationship of [expected tournament wins by seed from this week's #TidyTuesday dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-10-06/readme.md). This is similar to the ["average" column in the FiveThirtyEight table in this article](https://fivethirtyeight.com/features/tom-izzo-is-the-best-coach-in-modern-ncaa-tournament-history-by-far/). This was what I was most interested in when I saw this data, but I was pretty confused about what was going on this table at first! Many thanks to [Tom Mock](https://themockup.blog/) for helping out my understanding.
+
+Let's start by reading in the data.
+
+```{r}
+library(tidyverse)
+tournament <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-10-06/tournament.csv')
+
+tournament
+```
+
+We can look at the mean wins by seed.
+
+```{r}
+tournament %>%
+  group_by(seed) %>% 
+  summarise(exp_wins = mean(tourney_w, na.rm = TRUE)) %>% 
+  ggplot(aes(seed, exp_wins)) + 
+  geom_point(alpha = 0.8, size = 3) +
+  labs(y = "tournament wins (mean)")
+```
+
+Let's visualize all the tournament results, not just the averages.
+
+```{r fig.width=7, fig.height=5}
+tournament %>%
+  ggplot(aes(seed, tourney_w)) +
+  geom_bin2d(binwidth = c(1, 1), alpha = 0.8) +
+  scale_fill_gradient(low = "gray85", high = "midnightblue") +
+  labs(fill = "number of\nteams", y = "tournament wins")
+```
+
+We have a lot of options to deal with data like this (curvy, integers, all greater than zero) but one straightforward option are [splines](https://www.tmwr.org/recipes.html#spline-functions). Splines aren't perfect for this because they aren't constrained to stay greater than zero or to always decrease, but they work pretty well and can be used in lots of situations. We have to choose the **degrees of freedom** for the splines.
+
+```{r animation.hook="gifski", fig.width=7, fig.height=5}
+library(splines)
+
+plot_smoother <- function(deg_free) {
+  p <- ggplot(tournament, aes(seed, tourney_w)) + 
+    geom_bin2d(binwidth = c(1, 1), alpha = 0.8) +
+    scale_fill_gradient(low = "gray85", high = "midnightblue") +
+    geom_smooth(
+      method = lm, se = FALSE, color = "black",
+      formula = y ~ ns(x, df = deg_free)
+    ) +
+    labs(fill = "number of\nteams", y = "tournament wins",
+         title = paste(deg_free, "spline terms"))
+  
+  print(p)
+}
+
+walk(c(2, 4, 6, 8, 10, 15), plot_smoother)
+```
+
+As the number of degrees of freedom goes up, the curves get more wiggly. This would allow the model to fit a more complex relationship, perhaps too much so give our data. We can _tune_ this hyperparameter to find the best value.
+
+## Build a model
+
+We can start by loading the tidymodels metapackage, and splitting our data into training and testing sets.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+tourney_split <- tournament %>%
+  filter(!is.na(seed)) %>%
+  initial_split(strata = seed)
+
+tourney_train <- training(tourney_split)
+tourney_test <- testing(tourney_split)
+```
+
+We are going to use [resampling](https://www.tmwr.org/resampling.html) to evaluate model performance, so let's get those resampled sets ready.
+
+```{r}
+set.seed(234)
+tourney_folds <- bootstraps(tourney_train)
+tourney_folds
+```
+
+Next we build a recipe for data preprocessing. It only has one step!
+
+- First, we must tell the `recipe()` what our model is going to be (using a formula here) and what our training data is.
+- For our first and only step, we create new spline terms from the original `seed` variable. We don't know what the best value for the degrees of freedom is, so we will `tune()` it. We can set an `id` value for the tuneable parameter to more easily keep track of it, if we want.
+
+The object `tourney_rec` is a recipe that has **not** been trained on data yet, and in fact, we can't do this because we haven't decided on a value for `deg_free`.
+
+```{r}
+tourney_rec <- recipe(tourney_w ~ seed, data = tourney_train) %>%
+  step_ns(seed, deg_free = tune("seed_splines"))
+
+tourney_rec
+```
+
+Next, let's create a model specification for a linear regression model, and the combine the recipe and model together in a [workflow](https://www.tmwr.org/workflows.html).
+
+```{r}
+lm_spec <- linear_reg() %>% set_engine("lm")
+
+tourney_wf <- workflow() %>%
+  add_recipe(tourney_rec) %>%
+  add_model(lm_spec)
+
+tourney_wf
+```
+
+This workflow is almost ready to go, but we need to decide what values to try for the splines. There are several different ways to [create tuning grids](https://dials.tidymodels.org/), but if the grid you need is very simple, you might prefer to create it by hand.
+
+```{r}
+spline_grid <- tibble(seed_splines = c(1:3, 5, 7, 10))
+spline_grid
+```
+
+Now we can put this all together! When we use `tune_grid()`, we will fit each of the options in the grid to each of the resamples.
+
+```{r}
+doParallel::registerDoParallel()
+save_preds <- control_grid(save_pred = TRUE)
+
+spline_rs <- 
+  tune_grid(
+    tourney_wf,
+    resamples = tourney_folds, 
+    grid = spline_grid,
+    control = save_preds
+  )
+
+spline_rs
+```
+
+We have now fit each of our candidate set of spline features to our resampled training set!
+
+## Evaluate model
+
+Now let's check out how we did.
+
+```{r}
+collect_metrics(spline_rs)
+```
+
+Looks like the model got better and better as we added more degrees of freedom, which isn't too shocking. In what way did it change?
+
+```{r}
+collect_metrics(spline_rs) %>%
+  ggplot(aes(seed_splines, mean, color = .metric)) +
+  geom_line(size = 1.5, alpha = 0.5) +
+  geom_point(size = 3) +
+  facet_wrap(~.metric, ncol = 1, scales = "free_y") +
+  labs(x = "degrees of freedom", y = NULL) +
+  theme(legend.position = "none")
+```
+
+The model improved a lot as we increased the degrees of freedom at the beginning, but then continuing to add more didn't make much difference. We could choose the numerically optimal hyperparameter with `select_best()` but that would choose a more wiggly, complex model than we probably want. We can choose a _simpler_ model that performs well, within some limits around the numerically optimal result. We could choose either by percent loss in performance or within one standard error in performance.
+
+```{r}
+select_by_pct_loss(spline_rs, metric = "rmse", limit = 5, seed_splines)
+select_by_one_std_err(spline_rs, metric = "rmse", seed_splines)
+```
+
+Looks like 2 or 3 degrees of freedom is a good option. Let's go with 3, and update our tuneable workflow with this information and then fit it to our training data.
+
+```{r}
+final_wf <- finalize_workflow(tourney_wf, tibble(seed_splines = 3)) 
+tourney_fit <- fit(final_wf, tourney_train)
+tourney_fit
+```
+
+We can predict from this fitted workflow. For example, we can predict on the testing data and compute model performance.
+
+```{r}
+tourney_test %>%
+  bind_cols(predict(tourney_fit, tourney_test)) %>%
+  metrics(tourney_w, .pred)
+```
+
+Pretty good! We can also predict on other kinds of new data. For example, let's recreate the ["average" column in the FiveThirtyEight table on expected wins](https://fivethirtyeight.com/features/tom-izzo-is-the-best-coach-in-modern-ncaa-tournament-history-by-far/).
+
+```{r}
+predict(tourney_fit, new_data = tibble(seed = 1:16))
+```
+
+It's close! This isn't a huge surprise, since we're fitting curves to data in a straightforward way here, but it's still good to see. You can also see why splines aren't perfect for this task, because the prediction isn't constrained to positive values. 
