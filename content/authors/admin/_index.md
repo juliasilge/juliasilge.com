@@ -1,7 +1,7 @@
 ---
 authors:
 - admin
-bio: I'm an international keynote speaker and a real-world practitioner focusing on data analysis and machine learning practice. I love making beautiful charts and communicating about technical topics with diverse audiences.
+bio: I'm an author, international keynote speaker, and real-world practitioner focusing on data analysis and machine learning practice. I love making beautiful charts and communicating about technical topics with diverse audiences.
 email: ""
 organizations:
 - name: RStudio PBC
@@ -35,7 +35,7 @@ title: Julia Silge
 
 My name is Julia Silge and I am a data scientist and software engineer at RStudio where I work on [open source modeling tools](https://www.tidymodels.org/). My last name is pronounced SILL-GHEE (two syllables, short `i`, hard `g`). I love making beautiful charts, the statistical programming language R, Jane Austen, black coffee, and red wine.
 
-I studied physics and astronomy, finishing my PhD in 2005. I worked in academia (teaching and doing research) and ed tech before moving into data science and discovering R. I am both an international speaker and a real-world practitioner focusing on data analysis and machine learning practice. I have written books with my collaborators about [text mining](http://amzn.to/2tZkmxG) and [supervised machine learning for text](https://smltar.com/) in R. You can find me on [Twitter](https://twitter.com/juliasilge) and [GitHub](https://github.com/juliasilge). 
+I studied physics and astronomy, finishing my PhD in 2005. I worked in academia (teaching and doing research) and ed tech before moving into data science and discovering R. I am both an international speaker and a real-world practitioner focusing on data analysis and machine learning practice. I have written books with my collaborators about [text mining](http://amzn.to/2tZkmxG), [supervised machine learning for text](https://smltar.com/), and [modeling with tidy data principles](https://www.tmwr.org/) in R. You can find me on [Twitter](https://twitter.com/juliasilge) and [GitHub](https://github.com/juliasilge). 
 
 I live in Salt Lake City, UT, with my husband, three kids, and two cats.
 
