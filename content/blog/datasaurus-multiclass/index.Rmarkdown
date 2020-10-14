@@ -1,0 +1,230 @@
+---
+title: "Predicting class membership for the #TidyTuesday Datasaurus Dozen "
+author: Julia Silge
+date: '2020-10-14'
+slug: datasaurus-multiclass
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Which of the Datasaurus Dozen are easier or harder for a random forest model to identify? Learn how to use multiclass evaluation metrics to find out."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+
+autoplot.conf_mat <- function(object, type = "heatmap", ...) {
+  cm_heat(object)
+}
+
+cm_heat <- function(x) {
+    `%+%` <- ggplot2::`%+%`
+    
+    table <- x$table
+    
+    df <- as.data.frame.table(table)
+    
+    # Force known column names, assuming that predictions are on the
+    # left hand side of the table (#157).
+    names(df) <- c("Prediction", "Truth", "Freq")
+    
+    # Have prediction levels going from high to low so they plot in an
+    # order that matches the LHS of the confusion matrix
+    lvls <- levels(df$Prediction)
+    df$Prediction <- factor(df$Prediction, levels = rev(lvls))
+    
+    df %>%
+        ggplot2::ggplot(
+            ggplot2::aes(
+                x = Truth,
+                y = Prediction,
+                fill = Freq
+            )
+        ) %+%
+        ggplot2::geom_tile() %+%
+        ggplot2::scale_fill_gradient(low = "grey90", high = "orange") %+%
+        ggplot2::theme(
+            panel.background = ggplot2::element_blank(),
+            legend.position = "none"
+        ) %+%
+        ggplot2::geom_text(ggplot2::aes(label = Freq), family = "IBMPlexSans-Medium")
+}
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast uses a smaller dataset but lets us try out some important skills in modeling, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on the [Datasaurus Dozen](http://www.thefunctionalart.com/2016/08/download-datasaurus-never-trust-summary.html).
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "QhAPA_X")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+The [Datasaurus Dozen dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-10-13/readme.md) is a collection of 13 sets of `x`/`y` data that have very similar summary statistics but look very different when plotted. Our modeling goal is to predict which member of the "dozen" each point belongs.
+
+Let's start by reading in the data from the [datasauRus](https://cran.r-project.org/package=datasauRus) package.
+
+```{r}
+library(tidyverse)
+library(datasauRus)
+
+datasaurus_dozen
+```
+
+These datasets are very different from each other!
+
+```{r}
+datasaurus_dozen %>%
+    ggplot(aes(x, y, color = dataset))+
+    geom_point(show.legend = FALSE)+
+    facet_wrap(~dataset, ncol = 5)
+```
+
+But their summary statistics are so similar.
+
+```{r}
+datasaurus_dozen %>%
+    group_by(dataset) %>%
+    summarise(across(c(x, y), list(mean = mean, sd = sd)),
+              x_y_cor = cor(x, y))
+```
+
+Let's explore whether we can use modeling to predict which dataset a point belongs to. This is not a large dataset compared to the number of classes (13!) so this isn't a tutorial that shows best practices for a predictive modeling workflow overall, but it _does_ demonstrate how to evaluate a multiclass model, as well as a bit about how random forest models work.
+
+```{r}
+datasaurus_dozen %>%
+    count(dataset)
+```
+
+
+## Build a model
+
+Let's start out by creating bootstrap resamples of the Datasaurus Dozen. Notice that we aren't splitting into testing and training sets, so we won't have an unbiased estimate of performance on new data. Instead, we will use these resamples to understand the dataset and multiclass models better.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+dino_folds <- datasaurus_dozen %>%
+    mutate(dataset = factor(dataset)) %>%
+    bootstraps()
+
+dino_folds
+```
+
+Let's create a random forest model and set up a model workflow with the model and a formula preprocessor. We are predicting the `dataset` class (dino vs. circle vs. bullseye vs. ...) from `x` and `y`. A random forest model can often do a good job of learning complex interactions in predictors.
+
+```{r}
+rf_spec <- rand_forest(trees = 1000) %>%
+    set_mode("classification") %>%
+    set_engine("ranger")
+
+dino_wf <- workflow() %>%
+    add_formula(dataset ~ x + y) %>%
+    add_model(rf_spec)
+
+dino_wf
+```
+
+Let's fit the random forest model to the bootstrap resamples.
+
+```{r}
+doParallel::registerDoParallel()
+dino_rs <- fit_resamples(
+    dino_wf,
+    resamples = dino_folds,
+    control = control_resamples(save_pred = TRUE)
+)
+
+dino_rs
+```
+
+We did it!
+
+## Evaluate model
+
+How did these models do overall?
+
+```{r}
+collect_metrics(dino_rs)
+```
+
+The accuracy is not great; a multiclass problem like this, especially one with so many classes, is harder than a binary classification problem. There are so many possible wrong answers!
+
+Since we saved the predictions with `save_pred = TRUE` we can compute other performance metrics. Notice that by default the positive predictive value (like accuracy) is macro-weighted for multiclass problems.
+
+```{r}
+dino_rs %>%
+  collect_predictions() %>%
+  group_by(id) %>%
+  ppv(dataset, .pred_class)
+```
+
+Next, let's compute ROC curves for each class.
+
+```{r, fig.width=11, fig.height=6}
+dino_rs %>%
+    collect_predictions() %>%
+    group_by(id) %>%
+    roc_curve(dataset, .pred_away:.pred_x_shape) %>% 
+    ggplot(aes(1 - specificity, sensitivity, color = id)) +
+    geom_abline(lty = 2, color = "gray80", size = 1.5) +
+    geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+    facet_wrap(~.level, ncol = 5) +
+    coord_equal()
+```
+
+We have an ROC curve for each class and each resample in this plot. Notice that the points dataset was easy for the model to identify while the dino dataset was very difficult. The model barely did better than guessing for the dino!
+
+
+We can also compute a confusion matrix. We could use `tune::conf_mat_resampled()` but since there are so few examples per class and the classes were balanced, let's just look at all the resamples together.
+
+```{r, R.options = list(width = 200)}
+dino_rs %>%
+    collect_predictions() %>%
+    conf_mat(dataset, .pred_class)
+```
+
+These counts are can be easier to understand in a visualization.
+
+```{r, fig.width=10, fig.height=6}
+dino_rs %>%
+    collect_predictions() %>%
+    conf_mat(dataset, .pred_class) %>%
+    autoplot(type = "heatmap") 
+```
+
+There is some real variability on the diagonal, with a factor of 10 difference from dinos to dots.
+
+If we set the diagonal to all zeroes, we can see which classes were most likely to be confused for each other.
+
+```{r, fig.width=10, fig.height=6}
+dino_rs %>%
+    collect_predictions() %>%
+    filter(.pred_class != dataset) %>%
+    conf_mat(dataset, .pred_class) %>%
+    autoplot(type = "heatmap") 
+```
+
+The dino dataset was confused with many of the other datasets, and `wide_lines` was often confused with `slant_up`.
+
