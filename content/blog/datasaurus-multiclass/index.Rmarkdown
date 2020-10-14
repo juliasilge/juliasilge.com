@@ -71,7 +71,7 @@ cm_heat <- function(x) {
 This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast uses a smaller dataset but lets us try out some important skills in modeling, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on the [Datasaurus Dozen](http://www.thefunctionalart.com/2016/08/download-datasaurus-never-trust-summary.html).
 
 ```{r, echo=FALSE}
-blogdown::shortcode("youtube", "QhAPA_X")
+blogdown::shortcode("youtube", "QhAPA_X-ilA")
 ```
 
 </br>
