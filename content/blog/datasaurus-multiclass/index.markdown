@@ -32,7 +32,7 @@ Here is the code I used in the video, for those who prefer reading instead of or
 
 ## Explore data
 
-The [Datasaurus Dozen dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-10-13/readme.md) is a collection of 13 sets of `x`/`y` data that have very similar summary statistics but look very different when plotted. Our modeling goal is to predict which member of the "dozen" each point belongs.
+The [Datasaurus Dozen dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-10-13/readme.md) is a collection of 13 sets of `x`/`y` data that have very similar summary statistics but look very different when plotted. Our modeling goal is to predict which member of the "dozen" each point belongs to.
 
 Let's start by reading in the data from the [datasauRus](https://cran.r-project.org/package=datasauRus) package.
 
