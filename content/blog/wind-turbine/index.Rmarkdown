@@ -1,0 +1,227 @@
+---
+title: "Tune and interpret decision trees for #TidyTuesday wind turbines"
+author: Julia Silge
+date: '2020-10-29'
+slug: wind-turbine
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Use tidymodels to predict capacity for Canadian wind turbines with decision trees."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast walks through how to tune, fit, and predict from decision tree models, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Canadian wind turbines. `r emo::ji("canada")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "EDQnJF9LKHQ")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict the capacity of wind turbines in Canada [based on other characteristics of the turbines from this week's #TidyTuesday dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-10-27/readme.md). Simon Couch outlined this week [how to use stacks for ensembling with this dataset,](https://blog.simonpcouch.com/blog/gentle-intro-stacks/) but here let's take a more straightforward approach.
+
+Let's start by reading in the data.
+
+```{r}
+library(tidyverse)
+
+turbines <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-10-27/wind-turbine.csv')
+turbines
+```
+
+Let's do a bit of data cleaning and preparation.
+
+
+```{r}
+turbines_df <- turbines %>%
+    transmute(turbine_capacity = turbine_rated_capacity_k_w, 
+              rotor_diameter_m,
+              hub_height_m,
+              commissioning_date = parse_number(commissioning_date),
+              province_territory = fct_lump_n(province_territory, 10),
+              model = fct_lump_n(model, 10)) %>%
+    filter(!is.na(turbine_capacity)) %>%
+    mutate_if(is.character, factor)
+```
+
+How is the capacity related to other characteristics like the year of commissioning or size of the turbines?
+
+```{r, fig.width=9, fig.height=3}
+turbines_df %>%
+    select(turbine_capacity:commissioning_date) %>%
+    pivot_longer(rotor_diameter_m:commissioning_date) %>%
+    ggplot(aes(turbine_capacity, value)) +
+    geom_hex(bins = 15, alpha = 0.8) +
+    geom_smooth(method = "lm") +
+    facet_wrap(~name, scales = "free_y") +
+    labs(y = NULL) +
+    scale_fill_gradient(high = "cyan3")
+```
+
+These relationships are the kind that we want to use in modeling, whether that's the [modeling stacking Simon demonstrated](https://blog.simonpcouch.com/blog/gentle-intro-stacks/) or the single model we'll use here.
+
+## Build a model
+
+We can start by loading the tidymodels metapackage, splitting our data into training and testing sets, and creating cross-validation samples.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+wind_split <- initial_split(turbines_df, strata = turbine_capacity)
+wind_train <- training(wind_split)
+wind_test <- testing(wind_split)
+
+set.seed(234)
+wind_folds <- vfold_cv(wind_train, strata = turbine_capacity)
+wind_folds
+```
+
+Next, let's create a tunable decision tree model specification.
+
+```{r}
+tree_spec <- decision_tree(
+    cost_complexity = tune(),
+    tree_depth = tune(),
+    min_n = tune()
+) %>%
+    set_engine("rpart") %>%
+    set_mode("regression")
+
+tree_spec
+```
+
+We need a set of possible parameter values to try out for the decision tree.
+
+```{r}
+tree_grid <- grid_regular(cost_complexity(), tree_depth(), min_n(), levels = 4)
+
+tree_grid
+```
+
+Now, let's try out all the possible parameter values on all our resampled datasets. Let's use some non-default metrics, while we're at it.
+
+```{r}
+doParallel::registerDoParallel()
+
+set.seed(345)
+tree_rs <- tune_grid(
+    tree_spec,
+    turbine_capacity ~ .,
+    resamples = wind_folds,
+    grid = tree_grid,
+    metrics = metric_set(rmse, rsq, mae, mape)
+)
+
+tree_rs
+```
+
+Notice that we aren't tuning a `workflow()` here, as I have often shown how to do. Instead we are tuning the model specification (accompanied by a formula preprocessor); this is so we can use the bare model in some model evaluation activities.
+
+## Evaluate model
+
+Now let's check out how we did. We can collect or visualize the metrics.
+
+```{r}
+collect_metrics(tree_rs)
+autoplot(tree_rs) + theme_light(base_family = "IBMPlexSans")
+```
+
+Looks like this data needs a fairly complex tree!
+
+We can examine or select the best sets of parameter options, chosen by whichever metric we want.
+
+```{r}
+show_best(tree_rs, "mape")
+select_best(tree_rs, "rmse")
+```
+
+Next, let's use one of these "best" sets of parameters to update and finalize our model.
+
+```{r}
+final_tree <- finalize_model(tree_spec, select_best(tree_rs, "rmse"))
+
+final_tree
+```
+
+This model `final_tree` is updated and finalized (no longer tunable) but it is not _fit_. It has all its hyperparameters set but it has not been fit to any data. We have a couple of options for how to fit this model. We can either fit `final_tree` to training data using `fit()` or to the testing/training split using `last_fit()`, which will give us some other results along with the fitted output.
+
+```{r}
+final_fit <- fit(final_tree, turbine_capacity ~ ., wind_train)
+final_rs <- last_fit(final_tree, turbine_capacity ~ ., wind_split)
+```
+
+We can predict from either one of these objects.
+
+```{r}
+predict(final_fit, wind_train[144,])
+predict(final_rs$.workflow[[1]], wind_train[144,])
+```
+
+What are the most important variables in this decision tree for predicting turbine capacity?
+
+```{r}
+library(vip)
+
+final_fit %>%
+    vip(geom = "col", aesthetics = list(fill = "midnightblue", alpha = 0.8)) +
+    scale_y_continuous(expand = c(0,0))
+```
+
+I really like the [parttree](https://github.com/grantmcdermott/parttree) package for visualization decision tree results. It only works for models with one or two predictors, so we'll have to fit an example model that isn't quite the same as our full model. It can still help us understand how this decision tree is working, but keep in mind that it is not the same as our full model with more predictors.
+
+
+```{r}
+library(parttree)
+
+ex_fit <- fit(final_tree, 
+              turbine_capacity ~ rotor_diameter_m + commissioning_date, 
+              wind_train)
+
+wind_train %>%
+    ggplot(aes(rotor_diameter_m, commissioning_date)) +
+    geom_parttree(data = ex_fit, aes(fill = turbine_capacity), alpha = 0.3) +
+    geom_jitter(alpha = 0.7, width = 1, height = 0.5, aes(color = turbine_capacity)) +
+    scale_colour_viridis_c(aesthetics = c("color", "fill"))
+
+```
+
+Finally, let's turn to the testing data! These results are stored in `final_rs`, along with the fitted output there. We can see both metrics on the testing data and predictions.
+
+
+```{r}
+collect_metrics(final_rs)
+
+final_rs %>%
+    collect_predictions() %>%
+    ggplot(aes(turbine_capacity, .pred)) +
+    geom_abline(slope = 1, lty = 2, color = "gray50", alpha = 0.5) +
+    geom_point(alpha = 0.6, color = "midnightblue") +
+    coord_fixed()
+```
+
