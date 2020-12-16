@@ -1,0 +1,141 @@
+---
+title: "Upcoming changes to tidytext: threat of COLLAPSE"
+author: Julia Silge
+date: '2020-12-16'
+slug: tidytext-collapse-change
+categories:
+  - rstats
+tags:
+  - rstats
+subtitle: ''
+summary: "The current development version of tidytext has changes that may affect your analyses."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light())
+```
+
+The [tidytext](https://juliasilge.github.io/tidytext/) package passed one million downloads from CRAN this year! It has been truly amazing to see this project grow [out of an rOpenSci unconference several years ago](https://twitter.com/juliasilge/status/1314661438040940544) to be a piece of software useful to people's real world work.
+
+There has been some of the infrastructure of the package still around from its very early days, and as more people have continued to use it, some early decisions have needed to be visited. I recently made some updates that fix what most people would consider a bug and make behavior more consistent, but do result in some breaking changes in some situations. If you are a tidytext user comfortable with flexibility and early adoption, I would appreciate you installing this new version and reporting problems you experience before I submit this new version to CRAN.
+
+## On the verge of `collapse`
+
+These changes are related to the `collapse` argument for `unnest_tokens()`. What does this argument do? Let's say we have some text in a dataframe, with some metadata attached to each row.
+
+```{r}
+library(tidyverse)
+library(tidytext)
+
+d <- tibble(
+  txt = c(
+    "Because I could not stop for Death -",
+    "He kindly stopped for me -",
+    "The Carriage held but just Ourselves –",
+    "And Immortality."),
+  meta = c("a", "a", "b", "a")
+)
+
+d
+```
+
+We can use `unnest_tokens()` to tokenize to words in a pretty straightforward manner.
+
+```{r}
+d %>% unnest_tokens(token, txt)
+```
+
+What should happen if we want to tokenize to something like bigrams (a set of two words), though? Should we include bigrams that cross row boundaries, such as "death he"? The `collapse` argument is intended to control this. Its original implementation was not entirely consistent, though, and sometimes surprised users. The new `collapse` argument can take two kinds of options:
+
+- `NULL`, which means no collapsing across rows
+- A character vector of variables to collapse text across
+
+The new behavior also never combines rows that are not adjacent to each other, even if they share a `collapse` variable.
+
+The default is `collapse = NULL`. Notice that bigrams are not created that span across rows (no "death he").
+
+```{r}
+d %>% unnest_tokens(token, txt, token = "ngrams", n = 2) ## default: collapse = NULL
+```
+
+You can specify collapsing variables. This has only one, but you can use multiple. This approach *does* create a bigram "death he" but does not collapse together the 2nd "a" line and the last one, because they are not adjacent.
+
+```{r}
+d %>% unnest_tokens(token, txt, token = "ngrams", n = 2, collapse = "meta")
+```
+
+## What about grouped data?
+
+Before this recent update, `unnest_tokens()` did not handle grouped data consistently or well. Now, groups are another way to specify which variables should be used collapsing rows.
+
+```{r}
+d %>%
+  group_by(meta) %>%
+  unnest_tokens(token, txt, token = "ngrams", n = 2)
+```
+
+But you *cannot* use both!
+
+```{r, error=TRUE}
+d %>%
+  group_by(meta) %>%
+  unnest_tokens(token, txt, token = "ngrams", n = 2, collapse = "meta")
+```
+
+I've been reluctant to dig into this, because I know it is disruptive to folks to have a breaking change. However, after seeing the new flexibility, there is a lot in favor of moving forward with this more consistent and correct behavior. For example, take a look at the dataset of Jane Austen's six published, completed novels. We have information about line, chapter, and book.
+
+```{r}
+library(janeaustenr)
+
+original_books <- austen_books() %>%
+  group_by(book) %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, 
+                                     regex("^chapter [\\divxlc]",
+                                           ignore_case = TRUE)))) %>%
+  ungroup()
+
+original_books
+```
+
+We can tokenize with `collapse = NULL`, which will not combine text across rows across lines. This may be appropriate for some text analysis tasks.
+
+```{r}
+original_books %>% 
+  unnest_tokens(token, text, token = "ngrams", n = 2)
+```
+
+Alternatively, we can tokenize using `collapse = c("book", "chapter")`. Notice that we have **more bigrams** this way, because we have combined text across rows to find more bigrams, but only within chapters. We could have used `group_by(book, chapter)` instead.
+
+```{r}
+original_books %>% 
+  unnest_tokens(token, text, 
+                token = "ngrams", n = 2, 
+                collapse = c("book", "chapter"))
+```
+
+## Try it out now
+
+This is the most significant change to tidytext in quite a while, affecting mostly tokenization beyond the single word. If you are among the more risk tolerant of tidytext users, I would definitely appreciate you installing the current GitHub version and trying out these new changes to see how it impacts your text analyses. 
+
+```{r eval=FALSE}
+devtools::install_github("juliasilge/tidytext")
+```
+
+Let me know if you have feedback in the next few weeks!
+
+
+
