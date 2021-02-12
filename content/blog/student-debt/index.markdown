@@ -1,7 +1,7 @@
 ---
 title: "Understand your models with #TidyTuesday inequality in student debt"
 author: Julia Silge
-date: '2021-02-21'
+date: '2021-02-12'
 slug: student-debt
 categories:
   - rstats
@@ -22,7 +22,7 @@ projects: []
 
 
 
-This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast is a short one! It walks through how we can use tidyverse and tidymodels functions to explore a model after we have trained it, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on student debt inequality. 👨‍🎓
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast is a short one! It walks through how we can use tidyverse and tidymodels functions to explore a model after we have trained it, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on student debt inequality. 👩‍🎓
 
 
 {{% youtube "4ayOjlRv8bA" %}}
