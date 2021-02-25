@@ -140,12 +140,13 @@ To visualize this final result, let's use [plotly](https://plotly-r.com/) and ad
 
 ```{r out.width = "100%"}
 library(plotly)
+library(widgetframe)
 
 p <- augment(final_clust, employment_demo) %>%
     ggplot(aes(total, women, color = .cluster, name = occupation)) +
     geom_point()
-
-ggplotly(p, height = 400)
+p <- ggplotly(p, height = 500)
+frameWidget(p)
 ```
 
 
