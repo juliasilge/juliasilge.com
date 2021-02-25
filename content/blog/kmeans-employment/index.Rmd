@@ -1,0 +1,155 @@
+---
+title: "Getting started with k-means and #TidyTuesday employment status"
+author: Julia Silge
+date: '2021-02-24'
+slug: kmeans-employment
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Use tidy data principles to understand which kinds of occupations are most similar in terms of demographic characteristics."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast uses the [broom](https://broom.tidymodels.org/) package to tidy output from k-means clustering, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on employment and demographics.
+
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "opHDQzhO5Fw")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal is to use k-means clustering to explore [employment by race and gender](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-02-23/readme.md). This is a good screencast for folks who are more new to k-means and want to understand how to apply it to a real-world data set.
+
+
+```{r}
+library(tidyverse)
+
+employed <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-02-23/employed.csv')
+
+```
+
+Let's start by focusing on the **industry** and **occupation** combinations available in this data, and average over the years available. We aren't looking at any time trends, but instead at the demographic relationships.
+
+```{r}
+employed_tidy <- employed %>%
+    filter(!is.na(employ_n)) %>%
+    group_by(occupation = paste(industry, minor_occupation), race_gender) %>%
+    summarise(n = mean(employ_n)) %>%
+    ungroup()
+```
+
+Let's create a `dataframe` read for k-means. We need to center and scale the variables we are going to use, since they are on such different scales: the proportions of each category who are Asian, Black, or women and the total number of people in each category.
+
+```{r}
+employment_demo <- employed_tidy %>%
+    filter(race_gender %in% c("Women", "Black or African American", "Asian")) %>%
+    pivot_wider(names_from = race_gender, values_from = n, values_fill = 0) %>%
+    janitor::clean_names() %>%
+    left_join(employed_tidy %>%
+                  filter(race_gender == "TOTAL") %>%
+                  select(-race_gender) %>%
+                  rename(total = n)) %>%
+    filter(total > 1e3) %>%
+    mutate(across(c(asian, black_or_african_american, women), ~ . / (total)),
+           total = log(total),
+           across(where(is.numeric), ~as.numeric(scale(.)))) %>%
+    mutate(occupation = snakecase::to_snake_case(occupation))
+
+employment_demo
+```
+
+## Implement k-means clustering
+
+Now we can implement k-means clustering, starting out with three centers. What does the output look like?
+
+```{r}
+employment_clust <- kmeans(select(employment_demo, -occupation), centers = 3)
+summary(employment_clust)
+```
+
+The original format of the output isn't as practical to deal with in many circumstances, so we can load the [broom](https://broom.tidymodels.org/) package (part of [tidymodels](https://www.tidymodels.org/)) and use verbs like `tidy()`. This will give us the centers of the clusters we found:
+
+
+```{r}
+library(broom)
+tidy(employment_clust)
+```
+
+If we `augment()` the clustering results with our original data, we can plot any of the dimensions of our space, such as **total employed** vs. **proportion who are Black**. We can see here that there are really separable clusters but instead a smooth, continuous distribution from low to high along both dimensions. Switch out another dimension like `asian` to see that projection of the space.
+
+```{r}
+augment(employment_clust, employment_demo) %>%
+    ggplot(aes(total, black_or_african_american, color = .cluster)) +
+    geom_point()
+```
+
+
+## Choosing k
+
+We used `k = 3` but how do we know that's right? There are lots of complicated or "more art than science" ways of choosing `k`. One way is to look at the total within-cluster sum of squares and see if it stops dropping off so quickly at some value for `k`. We can get that from another verb from broom, `glance()`; let's try lots of values for `k` and see what happens to the total sum of squares.
+
+```{r, fig.width=7}
+kclusts <- 
+  tibble(k = 1:9) %>%
+  mutate(
+    kclust = map(k, ~kmeans(select(employment_demo, -occupation), .x)),
+    glanced = map(kclust, glance),
+  )
+
+kclusts %>%
+  unnest(cols = c(glanced)) %>%
+  ggplot(aes(k, tot.withinss)) +
+  geom_line(alpha = 0.5, size = 1.2, color = "midnightblue") +
+  geom_point(size = 2, color = "midnightblue")
+
+```
+
+I don't see a major "elbow" `r emo::ji("muscle")` but I'd say that `k = 5` looks pretty reasonable. Let's fit k-means again.
+
+```{r}
+final_clust <- kmeans(select(employment_demo, -occupation), centers = 5)
+```
+
+To visualize this final result, let's use [plotly](https://plotly-r.com/) and add the `occupation` name to the hover so we can mouse around and see which occupations are more similar.
+
+```{r out.width = "100%"}
+library(plotly)
+
+p <- augment(final_clust, employment_demo) %>%
+    ggplot(aes(total, women, color = .cluster, name = occupation)) +
+    geom_point()
+
+ggplotly(p, height = 500)
+```
+
+
+Remember that you can switch out the axes for `asian` or `black_or_african_american` to explore dimensions.
+
+
+
