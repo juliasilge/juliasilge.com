@@ -61,7 +61,7 @@ employment_demo</code></pre>
 <pre><code>## # A tibble: 230 x 5
 ##    occupation                          asian black_or_african_a…    women  total
 ##    &lt;chr&gt;                               &lt;dbl&gt;               &lt;dbl&gt;    &lt;dbl&gt;  &lt;dbl&gt;
-##  1 agriculture_and_related_construct… -0.553             -0.410  -1.31    -1.48
+##  1 agriculture_and_related_construct… -0.553             -0.410  -1.31    -1.48 
 ##  2 agriculture_and_related_farming_f… -0.943             -1.22   -0.509    0.706
 ##  3 agriculture_and_related_installat… -0.898             -1.28   -1.38    -0.992
 ##  4 agriculture_and_related_manage_me… -1.06              -1.66   -0.291    0.733
@@ -69,8 +69,8 @@ employment_demo</code></pre>
 ##  6 agriculture_and_related_office_an… -0.671             -1.54    2.23    -0.503
 ##  7 agriculture_and_related_productio… -0.385             -0.0372 -0.622   -0.950
 ##  8 agriculture_and_related_professio… -0.364             -1.17    0.00410 -0.782
-##  9 agriculture_and_related_protectiv… -1.35              -0.647  -0.833   -1.39
-## 10 agriculture_and_related_sales_and… -1.35              -1.44    0.425   -1.36
+##  9 agriculture_and_related_protectiv… -1.35              -0.647  -0.833   -1.39 
+## 10 agriculture_and_related_sales_and… -1.35              -1.44    0.425   -1.36 
 ## # … with 220 more rows</code></pre>
 </div>
 <div id="implement-k-means-clustering" class="section level2">
@@ -78,7 +78,7 @@ employment_demo</code></pre>
 <p>Now we can implement k-means clustering, starting out with three centers. What does the output look like?</p>
 <pre class="r"><code>employment_clust &lt;- kmeans(select(employment_demo, -occupation), centers = 3)
 summary(employment_clust)</code></pre>
-<pre><code>##              Length Class  Mode
+<pre><code>##              Length Class  Mode   
 ## cluster      230    -none- numeric
 ## centers       12    -none- numeric
 ## totss          1    -none- numeric
@@ -93,9 +93,9 @@ summary(employment_clust)</code></pre>
 tidy(employment_clust)</code></pre>
 <pre><code>## # A tibble: 3 x 7
 ##      asian black_or_african_american  women  total  size withinss cluster
-##      &lt;dbl&gt;                     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;    &lt;dbl&gt; &lt;fct&gt;
-## 1  1.46                       -0.551  0.385  0.503    45     125. 1
-## 2 -0.732                      -0.454 -0.820 -0.655    91     189. 2
+##      &lt;dbl&gt;                     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;    &lt;dbl&gt; &lt;fct&gt;  
+## 1  1.46                       -0.551  0.385  0.503    45     125. 1      
+## 2 -0.732                      -0.454 -0.820 -0.655    91     189. 2      
 ## 3  0.00978                     0.704  0.610  0.393    94     211. 3</code></pre>
 <p>If we <code>augment()</code> the clustering results with our original data, we can plot any of the dimensions of our space, such as <strong>total employed</strong> vs. <strong>proportion who are Black</strong>. We can see here that there are really separable clusters but instead a smooth, continuous distribution from low to high along both dimensions. Switch out another dimension like <code>asian</code> to see that projection of the space.</p>
 <pre class="r"><code>augment(employment_clust, employment_demo) %&gt;%
@@ -121,7 +121,7 @@ kclusts %&gt;%
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="2100" /></p>
 <p>I don’t see a major “elbow” 💪 but I’d say that <code>k = 5</code> looks pretty reasonable. Let’s fit k-means again.</p>
 <pre class="r"><code>final_clust &lt;- kmeans(select(employment_demo, -occupation), centers = 5)</code></pre>
-<p>To visualize this final result, let’s use <a href="https://plotly-r.com/">plotly</a> and add the <code>occupation</code> name to the hover so we can mouse around and see which occupations are more similar. I am using <code>widgetframe::frameWidget()</code> to display the interactive plot here on my blog, but you not would need that in many other circumstances.</p>
+<p>To visualize this final result, let’s use <a href="https://plotly-r.com/">plotly</a> and add the <code>occupation</code> name to the hover so we can mouse around and see which occupations are more similar. I am using <code>widgetframe::frameWidget()</code> to display the interactive plot here on my blog, but you would not need that in many other circumstances.</p>
 <pre class="r"><code>library(plotly)
 library(widgetframe)
 
@@ -131,6 +131,6 @@ p &lt;- augment(final_clust, employment_demo) %&gt;%
 p &lt;- ggplotly(p, height = 500)
 frameWidget(p)</code></pre>
 <div id="htmlwidget-1" style="width:100%;height:500px;" class="widgetframe html-widget"></div>
-<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"/index_files/figure-html/widgets/widget_unnamed-chunk-10.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"index_files/figure-html//widgets/widget_unnamed-chunk-10.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
 <p>Remember that you can switch out the axes for <code>asian</code> or <code>black_or_african_american</code> to explore dimensions.</p>
 </div>
