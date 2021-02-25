@@ -121,15 +121,14 @@ kclusts %&gt;%
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="2100" /></p>
 <p>I don’t see a major “elbow” 💪 but I’d say that <code>k = 5</code> looks pretty reasonable. Let’s fit k-means again.</p>
 <pre class="r"><code>final_clust &lt;- kmeans(select(employment_demo, -occupation), centers = 5)</code></pre>
-<p>To visualize this final result, let’s use <a href="https://plotly-r.com/">plotly</a> and add the <code>occupation</code> name to the hover so we can mouse around and see which occupations are more similar. I am using <code>widgetframe::frameWidget()</code> to display the interactive plot here on my blog, but you would not need that in many other circumstances.</p>
+<p>To visualize this final result, let’s use <a href="https://plotly-r.com/">plotly</a> and add the <code>occupation</code> name to the hover so we can mouse around and see which occupations are more similar.</p>
 <pre class="r"><code>library(plotly)
-library(widgetframe)
 
 p &lt;- augment(final_clust, employment_demo) %&gt;%
   ggplot(aes(total, women, color = .cluster, name = occupation)) +
   geom_point()
-p &lt;- ggplotly(p, height = 500)
-frameWidget(p)</code></pre>
+
+ggplotly(p, height = 500)</code></pre>
 <div id="htmlwidget-1" style="width:100%;height:500px;" class="widgetframe html-widget"></div>
 <script type="application/json" data-for="htmlwidget-1">{"x":{"url":"https://juliasilge.com/widgets/employment_plotly.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
 <p>Remember that you can switch out the axes for <code>asian</code> or <code>black_or_african_american</code> to explore dimensions.</p>
