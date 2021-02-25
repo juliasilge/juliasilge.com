@@ -136,7 +136,7 @@ I don't see a major "elbow" `r emo::ji("muscle")` but I'd say that `k = 5` looks
 final_clust <- kmeans(select(employment_demo, -occupation), centers = 5)
 ```
 
-To visualize this final result, let's use [plotly](https://plotly-r.com/) and add the `occupation` name to the hover so we can mouse around and see which occupations are more similar.
+To visualize this final result, let's use [plotly](https://plotly-r.com/) and add the `occupation` name to the hover so we can mouse around and see which occupations are more similar. I am using `widgetframe::frameWidget()` to display the interactive plot here on my blog, but you would not need that in many other circumstances.
 
 ```{r out.width = "100%"}
 library(plotly)
