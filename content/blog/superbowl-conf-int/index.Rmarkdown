@@ -1,0 +1,135 @@
+---
+title: "Bootstrap confidence intervals for #TidyTuesday Super Bowl commercials"
+author: Julia Silge
+date: '2021-03-04'
+slug: superbowl-conf-int
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Estimate how commercial characteristics like humor and patriotic themes change with time using tidymodels functions for bootstrap confidence intervals."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast uses a relatively new function from rsample for quickly finding bootstrap confidence intervals, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Super Bowl commercials. `r emo::ji("football")`
+
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "joMZ5GUqqSI")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore the data
+
+Our modeling goal is to estimate how the characteristics of [Super Bowl commercials](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-03-02/readme.md) have changed over time. There aren't a lot of observations in this data set, and this is an approach that can be used for robust estimates in such situations. Let's start by reading in the data.
+
+```{r}
+library(tidyverse)
+youtube <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-02/youtube.csv')
+```
+
+Let's make one exploratory plot to see how the characteristics of the commercials change over time.
+
+```{r}
+youtube %>%
+  select(year, funny:use_sex) %>%
+  pivot_longer(funny:use_sex) %>%
+  group_by(year, name) %>%
+  summarise(prop = mean(value)) %>%
+  ungroup() %>%
+  ggplot(aes(year, prop, color = name)) +
+  geom_line(size = 1.2, show.legend = FALSE) +
+  facet_wrap(vars(name)) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = NULL, y = "% of commercials")
+```
+
+
+## Fit a simple model
+
+Although those relationships don't look perfectly linear, we can use a linear model to estimate if and how much these characteristics are changing with time.
+
+```{r}
+simple_mod <- lm(year ~ funny + show_product_quickly + 
+                     patriotic + celebrity + danger + animals + use_sex,
+                 data = youtube)
+
+summary(simple_mod)
+```
+
+We get statistical properties from this linear model, but we can use bootstrap resampling to get an estimate of the variance in our quantities. In tidymodels, the [rsample](https://rsample.tidymodels.org/) package has functions to create resamples such as bootstraps.
+
+```{r}
+library(rsample)
+bootstraps(youtube, times = 1e3)
+```
+
+This has allowed you to carry out [flexible bootstrapping or permutation steps](https://www.tidymodels.org/learn/statistics/bootstrap/). However, that's a lot of steps to get to confidence intervals, especially if you are using a really simple model! In a recent release of rsample, we added a new function `reg_intervals()` that finds confidence intervals for models like `lm()` and `glm()` (as well as models from the [survival](https://cran.r-project.org/package=survival) package).
+
+```{r}
+set.seed(123)
+youtube_intervals <- reg_intervals(year ~ funny + show_product_quickly + 
+                                       patriotic + celebrity + danger + animals + use_sex,
+                                   data = youtube,
+                                   type = "percentile",
+                                   keep_reps = TRUE)
+
+youtube_intervals
+```
+
+All done!
+
+## Explore bootstrap results
+
+We can use visualization to explore these results. If we had _not_ set `keep_reps = TRUE`, we would only have the intervals themselves and could a plot such as this one.
+
+```{r}
+youtube_intervals %>%
+    mutate(term = str_remove(term, "TRUE"),
+           term = fct_reorder(term, .estimate)) %>%
+    ggplot(aes(.estimate, term)) +
+    geom_vline(xintercept = 0, size = 1.5, lty = 2, color = "gray80") +
+    geom_errorbarh(aes(xmin = .lower, xmax = .upper),
+                   size = 1.5, alpha = 0.5, color = "midnightblue") +
+    geom_point(size = 3, color = "midnightblue") +
+    labs(x = "Increase in year for each commercial characteristic",
+         y = NULL)
+```
+
+Since we did keep the individual replicates, we can look at the distributions.
+
+```{r, fig.height=6}
+youtube_intervals %>%
+    mutate(term = str_remove(term, "TRUE"),
+           term = fct_reorder(term, .estimate)) %>%
+    unnest(.replicates) %>%
+    ggplot(aes(estimate, fill = term)) +
+    geom_vline(xintercept = 0, size = 1.5, lty = 2, color = "gray50") +
+    geom_histogram(alpha = 0.8, show.legend = FALSE) +
+    facet_wrap(vars(term))
+```
+
+We have evidence that Super Bowl commericals (at least the ones including in this [FiveThirtyEight sample](https://github.com/fivethirtyeight/superbowl-ads)) are including less humor and sexual content and more celebrities and patriotic themes.
