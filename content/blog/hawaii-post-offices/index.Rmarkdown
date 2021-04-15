@@ -1,0 +1,227 @@
+---
+title: "Which #TidyTuesday post offices are in Hawaii?"
+author: Julia Silge
+date: '2021-04-14'
+slug: hawaii-post-offices
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Use tidymodels to predict post office location with subword features and a support vector machine model."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out with first modeling steps to tuning more complex models. Today's screencast walks through how to use text information at the subword level in predictive modeling, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on United States post offices. `r emo::ji("mailbox_with_mail")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "RA5SyY-s-AA")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict whether a post office is in Hawaii or not [based on the name of the office in this week's #TidyTuesday dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-04-13/readme.md).
+
+Let's start by reading in the data.
+
+```{r}
+library(tidyverse)
+
+post_offices <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-04-13/post_offices.csv')
+```
+
+How many post offices are there in each state?
+
+```{r}
+post_offices %>%
+    count(state, sort = TRUE)
+```
+
+In Hawaii, the names of the post offices are unique, but there are not many at all, compared to the other states.
+
+```{r}
+post_offices %>%
+    filter(state == "HI") %>%
+    pull(name)
+```
+
+
+## Build a model
+
+We can start by loading the tidymodels metapackage, splitting our data into training and testing sets, and creating cross-validation samples. Think about this stage as _spending your data budget_.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+po_split <- post_offices %>%
+    mutate(state = case_when(state == "HI" ~ "Hawaii",
+                             TRUE ~ "Other")) %>%
+    select(name, state) %>%
+    initial_split(strate = state)
+
+po_train <- training(po_split)
+po_test <- testing(po_split)
+
+set.seed(234)
+po_folds <- vfold_cv(po_train, strata = state)
+po_folds
+```
+
+Next, let's create our feature engineering recipe. Let's tokenize using [byte pair encoding](https://en.wikipedia.org/wiki/Byte_pair_encoding); this is an algorithm that iteratively merges frequently occurring subword pairs and gets us information in between character-level and word-level. You can read more about byte pair encoding in [this section of _Supervised Machine Learning for Text Analysis in R_](https://smltar.com/dlcnn.html#case-study-byte-pair-encoding).
+
+```{r}
+library(textrecipes)
+library(themis)
+
+po_rec <- recipe(state ~ name, data = po_train) %>%
+    step_tokenize(name,
+                  engine = "tokenizers.bpe",
+                  training_options = list(vocab_size = 200)) %>%
+    step_tokenfilter(name, max_tokens = 200) %>%
+    step_tf(name) %>%
+    step_normalize(all_predictors()) %>%
+    step_smote(state)
+
+po_rec
+```
+
+We also are upsampling this very imbalanced data set via `step_smote()` from the [themis](https://themis.tidymodels.org/) package. The results of this data preprocessing show us the subword features.
+
+```{r}
+po_rec %>% prep() %>% bake(new_data = NULL)
+```
+
+Next let's create a model specification for a linear support vector machine. This is a newer model in parsnip, currently in the development version on GitHub. Linear SVMs are often a good starting choice for text models.
+
+```{r}
+svm_spec <- svm_linear() %>%
+    set_mode("classification") %>%
+    set_engine("LiblineaR")
+
+svm_spec
+```
+
+Let's put these together in a workflow.
+
+```{r}
+po_wf <- workflow() %>%
+    add_recipe(po_rec) %>%
+    add_model(svm_spec)
+
+po_wf
+```
+
+Now let's fit this workflow (that combines feature engineering with the SVM model) to the resamples we created earlier. The linear SVM model does not support class probabilities, so we need to set a custom `metric_set()` that only includes metrics for hard clss probabilities.
+
+```{r}
+set.seed(234)
+
+doParallel::registerDoParallel()
+po_rs <- fit_resamples(
+    po_wf,
+    po_folds,
+    metrics = metric_set(accuracy, sens, spec)
+)
+```
+
+How did we do?
+
+```{r}
+collect_metrics(po_rs)
+```
+
+Not too bad, although you can tell we are doing better on one class than the other.
+
+## Fit and evaluate final model
+
+Next, let's fit our model on last time to the **whole** training set at once (rather than resampled data) and evaluate on the testing set. This is the first time we have touched the testing set.
+
+```{r}
+final_fitted <- last_fit(
+  po_wf, 
+  po_split, 
+  metrics = metric_set(accuracy, sens, spec)
+)
+collect_metrics(final_fitted)
+```
+
+Our performance on the testing set is about the same as what we found with our resampled data, which is good.
+
+We can explore how the model is doing for both the positive and negative classes with a confusion matrix.
+
+```{r}
+collect_predictions(final_fitted) %>%
+    conf_mat(state, .pred_class)
+```
+
+This just really emphasizes what an imbalanced problem this is, but we can see how well we are doing for the post offices in Hawaii vs. the rest of the country.
+
+We are still in the process of building out support for exploring results for the LiblineaR model (like a `tidy()` method) but in the meantime, you can get out the linear coefficients manually.
+
+```{r}
+po_fit <- pull_workflow_fit(final_fitted$.workflow[[1]])
+liblinear_obj <- po_fit$fit$W
+liblinear_df <- tibble(term = colnames(liblinear_obj), 
+                       estimate = liblinear_obj[1,]) 
+liblinear_df
+```
+
+Those `term` items are the subwords that the byte pair encoding algorithm found for this data set. We can `arrange()` them to see which are most important in each direction.
+
+```{r}
+liblinear_df %>%
+    arrange(-estimate)
+
+liblinear_df %>%
+    arrange(estimate)
+```
+
+Or we can build a visualization.
+
+```{r}
+liblinear_df %>%
+    filter(term != "Bias") %>%
+    group_by(estimate > 0) %>%
+    slice_max(abs(estimate), n = 15) %>%
+    ungroup() %>%
+    mutate(term = str_remove(term, "tf_name_")) %>%
+    ggplot(aes(estimate, fct_reorder(term, estimate), fill = estimate > 0)) +
+    geom_col(alpha = 0.6) +
+    geom_text(aes(label = term), family = "IBMPlexSans-Medium") +
+    scale_fill_discrete(labels = c("More from Hawaii", "Less from Hawaii")) +
+    scale_y_discrete(breaks = NULL) +
+    theme(axis.text.y = element_blank()) +
+    labs(x = "Coefficient from linear SVM",
+         y = NULL,
+         fill = NULL,
+         title = "Which subwords in a US Post Office name are used more in Hawaii?",
+         subtitle = "Subwords like A, I, O, and AN are the strongest predictors of a post office being in Hawaii")
+```
+
+
+
+
