@@ -1,0 +1,155 @@
+---
+title: "Estimate change in #TidyTuesday CEO departures with bootstrap resampling"
+author: Julia Silge
+date: '2021-04-28'
+slug: ceo-departures
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Are more CEO departures involuntary now than in the past? We can use tidymodels' bootstrap resampling and generalized linear models to understand change over time."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from just starting out to tuning more complex models with many hyperparameters. Today's screencast walks through how to use bootstrap resampling, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on CEO departures. `r emo::ji("wave")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "UwSBDLcUQP0")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to estimate how [involuntary CEO departures](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-04-27/readme.md) are changing with time. Let's start by reading in the data.
+
+```{r}
+library(tidyverse)
+
+departures_raw <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-04-27/departures.csv')  
+```
+
+
+How are involuntary departures changing with time? What about the rest of the CEO departures?
+
+```{r}
+departures_raw %>%
+    filter(departure_code < 9) %>%
+    mutate(involuntary = if_else(departure_code %in% 3:4, "involuntary", "other")) %>%
+    filter(fyear > 1995, fyear < 2019) %>%
+    count(fyear, involuntary) %>%
+    ggplot(aes(fyear, n, color = involuntary)) +
+    geom_line(size = 1.2, alpha = 0.5) +
+    geom_point(size = 2) +
+    geom_smooth(method = "lm", lty = 2) +
+    scale_y_continuous(limits = c(0, NA)) +
+    labs(x = NULL, y = "Number of CEO departures", color = NULL)
+
+```
+
+Looks like proportionally more departures are involuntary over time, but that is what we'll work on estimating. Let's create a data set to use for modeling.
+
+```{r}
+departures <- departures_raw %>%
+    filter(departure_code < 9) %>%
+    mutate(involuntary = if_else(departure_code %in% 3:4, "involuntary", "other")) %>%
+    filter(fyear > 1995, fyear < 2019)
+
+departures
+```
+
+## Bootstrapping a model
+
+We can count up the two kinds of departures per financial year and fit the model once, for the whole data set.
+
+```{r}
+library(broom)
+
+df <- departures %>%
+    count(fyear, involuntary) %>%
+    pivot_wider(names_from = involuntary, values_from = n)
+
+mod <- glm(cbind(involuntary, other) ~ fyear, data = df, family = "binomial")
+summary(mod)
+tidy(mod, exponentiate = TRUE)
+```
+
+When we use `exponentiate = TRUE`, we get the model coefficients on the linear scale instead of the logistic scale.
+
+What we want to do is fit a model like this a whole bunch of times, instead of just once. Let's create bootstrap resamples.
+
+```{r}
+library(rsample)
+
+set.seed(123)
+ceo_folds <- bootstraps(departures, times = 1e3)
+ceo_folds
+```
+
+Now we need to make a function to count up the departures by year and type, fit our model, and return the coefficients we want.
+
+```{r}
+fit_binom <- function(split) {
+    df <- analysis(split) %>%
+        count(fyear, involuntary) %>%
+        pivot_wider(names_from = involuntary, values_from = n)
+    
+    mod <- glm(cbind(involuntary, other) ~ fyear, data = df, family = "binomial")
+    tidy(mod, exponentiate = TRUE)
+}
+```
+
+We can apply that function to all our bootstrap resamples with `purrr::map()`.
+
+```{r}
+boot_models <- ceo_folds %>% mutate(coef_info = map(splits, fit_binom))
+boot_models
+```
+
+## Explore results
+
+What did we find? We can compute bootstrap confidence intervals with `int_pctl()`.
+
+```{r}
+percentile_intervals <- int_pctl(boot_models, coef_info)
+percentile_intervals
+```
+
+We can also visualize the results as well.
+
+```{r}
+boot_models %>%
+    unnest(coef_info) %>%
+    filter(term == "fyear") %>%
+    ggplot(aes(estimate)) +
+    geom_vline(xintercept = 1, lty = 2, color = "gray50", size = 2) +
+    geom_histogram() +
+    labs(x = "Annual increase in involuntary CEO departures",
+         title = "Over this time period, CEO departures are increasingly involuntary",
+         subtitle = "Each passing year corresponds to a departure being 1-2% more likely to be involuntary")
+```
+
+
