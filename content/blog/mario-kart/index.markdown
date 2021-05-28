@@ -21,7 +21,7 @@ projects: []
 
 This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from just starting out to tuning more complex models with many hyperparameters. Today’s screencast walks through how to train and evalute a random forest model, with this week’s [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Mario Kart world records. 🍄
 
-{{% youtube "J6pLNQ4JUjw" %}}
+{{% youtube "bn48fQ8aEDA" %}}
 
 </br>
 
