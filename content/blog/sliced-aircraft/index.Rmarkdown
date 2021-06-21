@@ -1,0 +1,214 @@
+---
+title: "Class imbalance and classification metrics with aircraft wildlife strikes"
+author: Julia Silge
+date: '2021-06-21'
+slug: sliced-aircraft
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Handling class imbalance in modeling affects classification metrics in different ways. Learn how to use tidymodels to subsample for class imbalance, and how to estimate model performance using resampling."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from just starting out to tuning more complex models with many hyperparameters. I recently participated in [SLICED](https://www.notion.so/SLICED-Show-c7bd26356e3a42279e2dfbafb0480073), a competitive data science prediction challenge. I did not necessarily cover myself in glory but in today's screencast, I walk through the data set on aircraft wildlife strikes we used and how different choices around handling class imbalance affect different classification metrics. `r emo::ji("airplane")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "7qIg-40rNbo")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict whether an [aircraft strike with wildlife](https://www.kaggle.com/c/sliced-s01e02-xunyc5/) resulted in damage to the aircraft. There are two data sets provided, training (which has the label `damaged`) and testing (which does not).
+
+```{r}
+library(tidyverse)
+
+train_raw <- read_csv("train.csv", guess_max = 1e5) %>%
+    mutate(damaged = case_when(damaged > 0 ~ "damage",
+                               TRUE ~ "no damage"))
+test_raw <- read_csv("test.csv", guess_max = 1e5)
+```
+
+There is lots available in the data!
+
+```{r}
+skimr::skim(train_raw)
+```
+
+The data is imbalanced, with not many incidents resulting in damage.
+
+```{r}
+train_raw %>%
+  count(damaged)
+```
+
+For numeric predictors, I often like to make a pairs plot for EDA.
+
+```{r, fig.width=10, fig.height=9}
+library(GGally)
+
+train_raw %>%
+    select(damaged, incident_year, height, speed, distance) %>%
+    ggpairs(columns = 2:5, aes(color = damaged, alpha = 0.5))
+```
+
+For categorical predictors, plots like these can be useful. Notice especially that `NA` values look like they may be informative so we likely don't want to throw them out.
+
+```{r, fig.height=8}
+train_raw %>%
+    select(damaged, precipitation, visibility, engine_type,
+           flight_impact, flight_phase, species_quantity) %>%
+    pivot_longer(precipitation:species_quantity) %>%
+    ggplot(aes(y = value, fill = damaged)) +
+    geom_bar(position = "fill") +
+    facet_wrap(vars(name), scales = "free", ncol = 2) +
+    labs(x = NULL, y = NULL, fill = NULL)
+```
+
+Let's use the following variables for this post.
+
+```{r}
+bird_df <- train_raw %>%
+    select(damaged, flight_impact, precipitation,
+           visibility, flight_phase, engines, incident_year,
+           incident_month, species_id, engine_type,
+           aircraft_model, species_quantity, height, speed)
+```
+
+## Build a model
+
+If I had enough time to try many models, I would [split the provided training data via `initial_split()`](https://www.tmwr.org/splitting.html), but I learned that two hours isn't really enough time for me to try that many models. Let's just create resampling folds from the provided training data.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+bird_folds <- vfold_cv(train_raw, v = 5, strata = damaged)
+bird_folds
+```
+
+The SLICED prediction problem was evaluate on a single metric, [log loss](https://yardstick.tidymodels.org/reference/mn_log_loss.html), so let's create a metric set for that metric plus a few others for demonstration purposes.
+
+```{r}
+bird_metrics <- metric_set(mn_log_loss, accuracy, sensitivity, specificity)
+```
+
+
+This data requires lots of preprocessing, such as handling new levels in the test set, pooling infrequent factor levels, and imputing or replacing the `NA` values.
+
+```{r}
+bird_rec <- recipe(damaged ~ ., data = bird_df) %>%
+    step_novel(all_nominal_predictors()) %>%
+    step_other(all_nominal_predictors(), threshold = 0.01) %>%
+    step_unknown(all_nominal_predictors()) %>%
+    step_impute_median(all_numeric_predictors()) %>%
+    step_zv(all_predictors())
+
+bird_rec
+```
+
+For this post, let's use a model I didn't try out during the stream, a [bagged tree model](https://baguette.tidymodels.org/). It's similar to the kinds of models that perform well in SLICED-like situations but it is easy to set up and very fast to fit.
+
+```{r}
+library(baguette)
+
+bag_spec <-
+    bag_tree(min_n = 10) %>%
+    set_engine("rpart", times = 25) %>%
+    set_mode("classification")
+
+imb_wf <-
+    workflow() %>%
+    add_recipe(bird_rec) %>%
+    add_model(bag_spec)
+
+imb_fit <- fit(imb_wf, data = bird_df)
+imb_fit
+```
+
+We automatically get out some variable importance too, which is nice! We see that `flight_impact` and `aircraft_model` are very important for this model.
+
+
+## Resample and compare models
+
+Now let's evaluate [how this model performs using resampling](https://www.tmwr.org/resampling.html).
+
+```{r}
+doParallel::registerDoParallel()
+set.seed(123)
+imb_rs <-
+    fit_resamples(
+        imb_wf,
+        resamples = bird_folds,
+        metrics = bird_metrics
+    )
+
+collect_metrics(imb_rs)
+```
+
+This is quite good compared to how other folks did with this data, especially for such a simple model. We could take this as a starting point and move to a similar but better performing model like xgboost.
+
+What happens, though, if we change the preprocessing recipe to account for the class imbalance?
+
+
+```{r}
+library(themis)
+
+bal_rec <- bird_rec %>%
+    step_dummy(all_nominal_predictors()) %>%
+    step_smote(damaged)
+
+bal_wf <-
+    workflow() %>%
+    add_recipe(bal_rec) %>%
+    add_model(bag_spec)
+
+set.seed(234)
+bal_rs <-
+    fit_resamples(
+        bal_wf,
+        resamples = bird_folds,
+        metrics = bird_metrics
+    )
+
+collect_metrics(bal_rs)
+```
+
+Notice that the log loss and accuracy got **worse**, while the sensitivity got **better**. This is very common and expected, and frankly I wish I hadn't been so laser focused on needing to get subsampling to work during the SLICED stream! In most real-world situations, a single metric is not adequate to measure how useful a model will be practically, and also unfortunately we often are most interested in detecting the minority class. This means that learning how to account for class imbalance is important in many real modeling scenarios. However, if you are ever in a situation where you are being evaluated on a single metric like log loss, you may want to stick with an imbalanced fit.
+
+```{r}
+test_df <- test_raw %>%
+    select(id, flight_impact, precipitation,
+           visibility, flight_phase, engines, incident_year,
+           incident_month, species_id, engine_type,
+           aircraft_model, species_quantity, height, speed)
+
+augment(imb_fit, test_df) %>%
+    select(id, .pred_damage)
+```
