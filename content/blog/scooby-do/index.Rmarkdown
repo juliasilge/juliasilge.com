@@ -1,0 +1,209 @@
+---
+title: "Predict which #TidyTuesday Scooby Doo monsters are REAL with a tuned decision tree model"
+author: Julia Silge
+date: '2021-07-13'
+slug: scooby-doo
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Which Scooby Doo monsters are REAL?! Walk through how to tune and then choose a decision tree model, as well as how to visualize and evaluate the results."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from just getting started to tuning more complex models. Today's screencast walks through how to train and evalute a random forest model, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Scooby Doo episodes. `r emo::ji("ghost")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "2g6f-j3sHS4")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict which [Scooby Doo monsters](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-07-13/readme.md) are real and which are not, based on other characteristics of the episode.
+
+```{r}
+library(tidyverse)
+scooby_raw <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-07-13/scoobydoo.csv')
+
+scooby_raw %>%
+    filter(monster_amount > 0) %>%
+    count(monster_real)
+```
+
+Most monsters are not real!
+
+How did the number of real vs. fake monsters change over the decades?
+
+```{r}
+scooby_raw %>% 
+    filter(monster_amount > 0) %>%
+    count(year_aired = 10 * ((lubridate::year(date_aired) + 1) %/% 10),
+          monster_real) %>%
+    mutate(year_aired = factor(year_aired)) %>%
+    ggplot(aes(year_aired, n, fill = monster_real)) +
+    geom_col(position = position_dodge(preserve = "single"), alpha = 0.8) +
+    labs(x = "Date aired", y = "Monsters per decade", fill = "Real monster?")
+```
+
+How are these different episodes rated on IMDB?
+
+```{r}
+scooby_raw %>%
+    filter(monster_amount > 0) %>%
+    mutate(imdb = parse_number(imdb)) %>%
+    ggplot(aes(imdb, after_stat(density), fill = monster_real)) +
+    geom_histogram(position = "identity", alpha = 0.5) +
+    labs(x = "IMDB rating", y = "Density", fill = "Real monster?")
+```
+
+It looks like there are some meaningful relationships there that we can use for modeling, but they are not linear so a decision tree may be a good fit.
+
+
+## Build and tune a model
+
+Let's start our modeling by setting up our "data budget". We're only going to use the _year_ each episode was aired and the episode _rating_.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+scooby_split <- scooby_raw %>%
+    mutate(imdb = parse_number(imdb),
+           year_aired = lubridate::year(date_aired)) %>%
+    filter(monster_amount > 0, !is.na(imdb)) %>%
+    mutate(monster_real = case_when(monster_real == "FALSE" ~ "fake",
+                                    TRUE ~ "real"),
+           monster_real = factor(monster_real)) %>%
+    select(year_aired, imdb, monster_real, title) %>%
+    initial_split(strata = monster_real)
+scooby_train <- training(scooby_split)
+scooby_test <- testing(scooby_split)
+
+set.seed(234)
+scooby_folds <- bootstraps(scooby_train, strata = monster_real)
+scooby_folds
+
+```
+
+Next, let's create our decision tree specification. It is tunable, and we could not fit this right away to data because we haven't said what the model parameters are yet.
+
+```{r}
+tree_spec <- 
+    decision_tree(
+        cost_complexity = tune(),
+        tree_depth = tune(),
+        min_n = tune()
+    ) %>%
+    set_mode("classification") %>%
+    set_engine("rpart")
+
+tree_spec
+```
+
+Let's set up a grid of possible model parameters to try.
+
+```{r}
+tree_grid <- grid_regular(cost_complexity(), tree_depth(), min_n(), levels = 4)
+tree_grid
+```
+
+Now let's fit each possible parameter combination to each resample. By putting non-default metrics into `metric_set()`, we can specify which metrics are computed for each resample.
+
+```{r}
+doParallel::registerDoParallel()
+
+set.seed(345)
+tree_rs <- 
+    tune_grid(
+        tree_spec,
+        monster_real ~ year_aired + imdb,
+        resamples = scooby_folds,
+        grid = tree_grid,
+        metrics = metric_set(accuracy, roc_auc, sensitivity, specificity)
+    )
+
+tree_rs
+```
+
+All done!
+
+## Evaluate and understand our model
+
+Now that we have tuned our decision tree model, we can choose which set of model parameters we want to use. What are some of the best options?
+
+```{r}
+show_best(tree_rs)
+```
+
+We can visualize all of the combinations we tried.
+
+```{r}
+autoplot(tree_rs) + theme_light(base_family = "IBMPlexSans")
+```
+
+If we used `select_best()`, we would pick the numerically best option. However, we might want to choose a different option that is within some criteria of the best performance, like a simpler model that is within one standard error of the optimal results. We finalize our model just like we finalize a workflow, as shown in previous posts.
+
+```{r}
+simpler_tree <- select_by_one_std_err(tree_rs, 
+                                      -cost_complexity, 
+                                      metric = "roc_auc")
+
+final_tree <- finalize_model(tree_spec, simpler_tree)
+```
+
+Now we can fit `final_tree` to our training data.
+
+```{r}
+final_fit <- fit(final_tree, monster_real ~ year_aired + imdb, scooby_train)
+```
+
+We also could use `last_fit()` instead of `fit()`, by swapping out the **split** for the training data. This will fit one time on the training data and evaluate one time on the testing data.
+
+```{r}
+final_rs <- last_fit(final_tree, monster_real ~ year_aired + imdb, scooby_split)
+```
+
+This is the first time we have used the testing data through this whole analysis, and let's us see how our model performs on the testing data. A bit worse, unfortunately!
+
+```{r}
+collect_metrics(final_rs)
+```
+
+Finally, we can use the [parttree](https://github.com/grantmcdermott/parttree) package to visualize our decision tree results.
+
+```{r}
+library(parttree)
+
+scooby_train %>%
+    ggplot(aes(imdb, year_aired)) +
+    geom_parttree(data = final_fit, aes(fill = monster_real), alpha = 0.2) +
+    geom_jitter(alpha = 0.7, width = 0.05, height = 0.2, aes(color = monster_real))
+```
+
+
+
