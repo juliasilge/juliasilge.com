@@ -1,0 +1,208 @@
+---
+title: "Use racing methods to tune xgboost models and predict home runs"
+author: Julia Silge
+date: '2021-07-29'
+slug: baseball-racing
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Models like xgboost have many tuning hyperparameters, but racing methods can help identify parameter combinations that are not performing well."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from just getting started to tuning more complex models. This week's episode of [SLICED](https://www.notion.so/SLICED-Show-c7bd26356e3a42279e2dfbafb0480073), a competitive data science streaming show, had contestants compete to predict home runs in recent baseball games. Honestly I don't know much about baseball `r emo::ji("baseball")` but the [finetune](https://github.com/tidymodels/finetune/) package had a recent release and this challenge offers a good opportunity to show how to use racing methods for tuning.
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "_e0NFIaHY2c")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict [whether a batter's hit results in a home run](https://www.kaggle.com/c/sliced-s01e09-playoffs-1/) given features about the hit. The main data set provided is in a CSV file called `training.csv`.
+
+```{r}
+library(tidyverse)
+train_raw <- read_csv("train.csv")
+```
+
+You can watch [this week's full episode of SLICED](https://www.youtube.com/channel/UCCsy9G2d0Q7m_d8cOtDineQ) to see lots of exploratory data analysis and visualization of this dataset, but let's just make a few plots to understand it better.
+
+How are home runs distributed in the physical space around home plate?
+
+```{r, fig.width=7}
+train_raw %>%
+  ggplot(aes(plate_x, plate_z, z = is_home_run)) +
+  stat_summary_hex(alpha = 0.8, bins = 10) +
+  scale_fill_viridis_c(labels = percent) +
+  labs(fill = "% home runs")
+```
+
+How do launch speed and angle of the ball leaving the bat affect home run percentage?
+
+```{r, fig.width=7}
+train_raw %>%
+  ggplot(aes(launch_angle, launch_speed, z = is_home_run)) +
+  stat_summary_hex(alpha = 0.8, bins = 15) +
+  scale_fill_viridis_c(labels = percent) +
+  labs(fill = "% home runs")
+```
+
+How does pacing, like the number of balls, strikes, or the inning, affect home runs?
+
+```{r, fig.height=4}
+train_raw %>%
+  mutate(is_home_run = if_else(as.logical(is_home_run), "yes", "no")) %>%
+  select(is_home_run, balls, strikes, inning) %>%
+  pivot_longer(balls:inning) %>%
+  mutate(name = fct_inorder(name)) %>%
+  ggplot(aes(value, after_stat(density), fill = is_home_run)) +
+  geom_histogram(alpha = 0.5, binwidth = 1, position = "identity") +
+  facet_wrap(~name, scales = "free") +
+  labs(fill = "Home run?")
+```
+
+There is certainly lots more to discover, but let's move on to modeling.
+
+## Build a model
+
+Let's start our modeling by setting up our "data budget". I'm going to convert the 0s and 1s from the original dataset into a factor for classification modeling.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+bb_split <- train_raw %>%
+  mutate(is_home_run = if_else(as.logical(is_home_run), "HR", "no"),
+         is_home_run = factor(is_home_run)) %>%
+  initial_split(strata = is_home_run)
+bb_train <- training(bb_split)
+bb_test <- testing(bb_split)
+
+set.seed(234)
+bb_folds <- vfold_cv(bb_train, strata = is_home_run)
+bb_folds
+```
+
+
+For feature engineering, let's concentrate on the variables we already explored during EDA along with info about the pitch and handedness of players. There is some missing data, especially in the `launch_angle` and `launch_speed`, so let's impute those values.
+
+```{r}
+bb_rec <-
+  recipe(is_home_run ~ launch_angle + launch_speed + plate_x + plate_z + 
+           bb_type + bearing + pitch_mph + 
+           is_pitcher_lefty + is_batter_lefty +
+           inning + balls + strikes + game_date,
+         data = bb_train) %>%
+  step_date(game_date, features = c("week"), keep_original_cols = FALSE) %>%
+  step_unknown(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_impute_median(all_numeric_predictors(), -launch_angle, -launch_speed) %>%
+  step_impute_linear(launch_angle, launch_speed, 
+                     impute_with = imp_vars(plate_x, plate_z, pitch_mph)) %>%
+  step_nzv(all_predictors())
+
+## we can `prep()` just to check that it works
+prep(bb_rec)
+```
+
+Now let's create a tunable xgboost model specification. In a competition like SLICED, we likely wouldn't want to tune all these parameters because of time constraints, but instead only some of the most important.
+
+```{r}
+xgb_spec <-
+  boost_tree(
+    trees = tune(), 
+    min_n = tune(), 
+    mtry = tune(),
+    learn_rate = 0.01 
+  ) %>%
+  set_engine('xgboost') %>%
+  set_mode('classification')
+
+xgb_wf <- workflow(bb_rec, xgb_spec)
+```
+
+## Use racing to tune xgboost
+
+Now we [can use `tune_race_anova()` to eliminate](https://finetune.tidymodels.org/reference/tune_race_anova.html) parameter combinations that are not doing well. This particular SLICED episode was being evaluted on log loss.
+
+```{r}
+library(finetune)
+doParallel::registerDoParallel()
+
+set.seed(345)
+xgb_rs <- tune_race_anova(
+    xgb_wf, 
+    resamples = bb_folds, 
+    grid = 15,
+    metrics = metric_set(mn_log_loss),
+    control = control_race(verbose_elim = TRUE)
+)
+```
+
+We can visualize how the possible parameter combinations we tried did during the "race". Notice how we saved a TON of time by not evaluating the parameter combinations that were clearly doing poorly on all the resamples; we only kept going with the good parameter combinations.
+
+```{r}
+plot_race(xgb_rs)
+```
+
+And we can look at the top results.
+
+```{r}
+show_best(xgb_rs)
+```
+
+Let's use `last_fit()` to fit one final time to the **training** data and evaluate one final time on the **testing** data.
+
+```{r}
+xgb_last <- xgb_wf %>%
+  finalize_workflow(select_best(xgb_rs, "mn_log_loss")) %>%
+  last_fit(bb_split)
+
+xgb_last
+```
+
+We can collect the predictions on the testing set and do whatever we want, like create an ROC curve, or in this case compute log loss.
+
+```{r}
+collect_predictions(xgb_last) %>%
+  mn_log_loss(is_home_run, .pred_HR)
+```
+
+This is pretty good for a single model; the competitors on SLICED who achieved better scores than this using this dataset all used ensemble models, I believe.
+
+We can also compute variable importance scores using the [vip]() package.
+
+```{r}
+library(vip)
+extract_workflow(xgb_last) %>%
+  extract_fit_parsnip() %>%
+  vip(geom = "point", num_features = 15)
+```
+
+Using racing methods is a great way to tune through lots of possible parameter options more quickly. Perhaps I'll put it to the test next Tuesday, when I participate in the second and final episode of the SLICED playoffs!
