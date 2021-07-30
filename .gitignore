@@ -9,3 +9,4 @@
 .httr-oauth
 LondonStageFull.json
 LondonStageJSON.zip
+*.csv
