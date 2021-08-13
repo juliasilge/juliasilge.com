@@ -21,7 +21,7 @@ projects: []
 
 Last summer, [Emil Hvitfeldt and I announced](https://juliasilge.com/blog/smltar-announce/) that we had started work on a new book project, to be published in the Chapman & Hall/CRC Data Science Series, and we are now happy to say that *Supervised Machine Learning for Text Analysis for R* (or SMLTAR, as we call it for short) is complete, in production, and available for preorder! You should be able to preorder it anywhere you normally buy books, such as [Bookshop](https://bookshop.org/books/supervised-machine-learning-for-text-analysis-in-r-9780367554194/9780367554194), [Amazon](https://www.amazon.com/Supervised-Machine-Learning-Analysis-Chapman/dp/0367554194/), or [directly from our publisher](https://www.routledge.com/Supervised-Machine-Learning-for-Text-Analysis-in-R/Hvitfeldt-Silge/p/book/9780367554194). The book is available in its entirety online at [smltar.com](https://smltar.com/), and we will continue to make the online version freely accessible.
 
-![preorder screenshot](featured.png)
+![preorder screenshot](figs/smltar_bookshop.png)
 
 Emil [published a blog post](https://www.emilhvitfeldt.com/post/smltar-story/) last week outlining both his personal reflections and some analysis of the process of working on such a big project. I encourage you to check it out, especially to see the visualizations of how the files making up this book project changed over time. It has been a pleasure to work with Emil and I am so glad to have him as a generous and kind collaborator in bringing this project to life.
 
