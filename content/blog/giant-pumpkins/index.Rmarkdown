@@ -1,0 +1,223 @@
+---
+title: "Predict #TidyTuesday giant pumpkin weights with workflowsets"
+author: Julia Silge
+date: '2021-10-22'
+slug: giant-pumpkins
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Get started with tidymodels workflowsets to handle and evaluate multiple preprocessing and modeling approaches simultaneously, using pumpkin competitions."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages. If you are a tidymodels user, either just starting out or someone who has used the packages a lot, we are interested in your feedback on [our priorities for 2022](https://www.tidyverse.org/blog/2021/10/tidymodels-2022-survey/). The survey we fielded last year turned out to be very helpful in making decisions, so we would so appreciate your input again!
+
+Today's screencast is great for someone just starting out with [workflowsets](https://workflowsets.tidymodels.org/), the tidymodels package for handling multiple preprocessing/modeling combinations at once, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on giant pumpkins from competitons. `r emo::ji("pie")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "qNxJKke2rsE")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict the weight of [giant pumpkins](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-10-19/readme.md) from other characteristics measured during a competition.
+
+```{r}
+library(tidyverse)
+
+pumpkins_raw <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-10-19/pumpkins.csv')
+
+pumpkins <-
+    pumpkins_raw %>%
+    separate(id, into = c("year", "type")) %>%
+    mutate(across(c(year, weight_lbs, ott, place), parse_number)) %>%
+    filter(type == "P") %>%
+    select(weight_lbs, year, place, ott, gpc_site, country)
+    
+pumpkins
+```
+
+The main relationship here is between the volume/size of the pumpkin (measured via "over-the-top inches") and weight.
+
+```{r}
+pumpkins %>%
+    filter(ott > 20, ott < 1e3) %>%
+    ggplot(aes(ott, weight_lbs, color = place)) +
+    geom_point(alpha = 0.2, size = 1.1) +
+    labs(x = "over-the-top inches", y = "weight (lbs)") +
+    scale_color_viridis_c()
+```
+
+Big, heavy pumpkins placed closer to winning at the competitions, naturally!
+
+Has there been any shift in this relationship over time?
+
+```{r}
+pumpkins %>%
+    filter(ott > 20, ott < 1e3) %>%
+    ggplot(aes(ott, weight_lbs)) +
+    geom_point(alpha = 0.2, size = 1.1, color = "gray60") +
+    geom_smooth(aes(color = factor(year)), method = lm, formula = y ~ splines::bs(x, 3), 
+                se = FALSE, size = 1.5, alpha = 0.6) +
+    labs(x = "over-the-top inches", y = "weight (lbs)", color = NULL) +
+    scale_color_viridis_d()
+
+```
+
+Hard to say, I think.
+
+Which countries produced more or less massive pumpkins?
+
+```{r}
+pumpkins %>%
+    mutate(country = fct_lump(country, n = 10),
+           country = fct_reorder(country, weight_lbs)) %>%
+    ggplot(aes(country, weight_lbs, color = country)) +
+    geom_boxplot(outlier.colour = NA) +
+    geom_jitter(alpha = 0.1, width = 0.15) +
+    labs(x = NULL, y = "weight (lbs)") +
+    theme(legend.position = "none")
+```
+
+
+## Build and fit a workflow set
+
+Let's start our modeling by setting up our "data budget". We'll stratify by our outcome `weight_lbs`.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+pumpkin_split <- pumpkins %>%
+    filter(ott > 20, ott < 1e3) %>%
+    initial_split(strata = weight_lbs)
+
+pumpkin_train <- training(pumpkin_split)
+pumpkin_test <- testing(pumpkin_split)
+
+set.seed(234)
+pumpkin_folds <- vfold_cv(pumpkin_train, strata = weight_lbs)
+pumpkin_folds
+```
+
+Next, let's create three data preprocessing recipes: one that only pools infrequently used factors levels, one that also creates indicator variables, and finally one that also creates spline terms for over-the-top inches. 
+
+```{r}
+base_rec <-
+    recipe(weight_lbs ~ ott + year + country + gpc_site, 
+           data = pumpkin_train) %>%
+    step_other(country, gpc_site, threshold = 0.02)
+
+ind_rec <-
+    base_rec %>%
+    step_dummy(all_nominal_predictors())
+
+spline_rec <-
+    ind_rec %>%
+    step_bs(ott)
+```
+
+Then, let's create three model specifications: a random forest model, a MARS model, and a linear model.
+
+```{r}
+rf_spec <-
+    rand_forest(trees = 1e3) %>% 
+    set_mode("regression") %>%
+    set_engine("ranger")
+
+mars_spec <-
+    mars() %>%
+    set_mode("regression") %>%
+    set_engine("earth")
+
+lm_spec <- linear_reg()
+```
+
+Now it's time to put the preprocessing and models together in a `workflow_set()`.
+
+```{r}
+pumpkin_set <-
+    workflow_set(
+        list(base_rec, ind_rec, spline_rec),
+        list(rf_spec, mars_spec, lm_spec),
+        cross = FALSE
+    )
+
+pumpkin_set
+```
+
+We use `cross = FALSE` because we don't want every combination of these components, only three options to try. Let's fit these possible candidates to our resamples to see which one performs best.
+
+```{r}
+doParallel::registerDoParallel()
+set.seed(2021)
+
+pumpkin_rs <-
+    workflow_map(
+        pumpkin_set, 
+        "fit_resamples", 
+        resamples = pumpkin_folds
+    )
+
+pumpkin_rs
+```
+
+## Evaluate workflow set
+
+How did our three candidates do?
+
+```{r, fig.height=3.5}
+autoplot(pumpkin_rs)
+```
+
+There is not much difference between the three options, and if anything, our linear model with spline feature engineering maybe did better. This is nice because it's a simpler model!
+
+```{r}
+collect_metrics(pumpkin_rs)
+```
+
+We can extract the workflow we want to use and fit it to our training data.
+
+```{r}
+final_fit <-
+    extract_workflow(pumpkin_rs, "recipe_3_linear_reg") %>%
+    fit(pumpkin_train)
+```
+
+We can use an object like this to predict, such as on the test data like `predict(final_fit, pumpkin_test)`, or we can examine the model parameters.
+
+```{r}
+tidy(final_fit) %>%
+    arrange(-abs(estimate))
+```
+
+The spline terms are by far the most important, but we do see evidence of certain sites and countries being predictive of weight (either up or down) as well as a small trend of heavier pumpkins with year.
+
+Don't forget to take the [tidymodels survey for 2022 priorities](https://www.tidyverse.org/blog/2021/10/tidymodels-2022-survey/)!
+
