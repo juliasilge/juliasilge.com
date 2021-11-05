@@ -1,0 +1,145 @@
+---
+title: "Spatial resampling for #TidyTuesday and the #30DayMapChallenge"
+author: Julia Silge
+date: '2021-11-05'
+slug: map-challenge
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Use spatial resampling to more accurately estimate model performance for geographic data."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from just getting started to tuning more complex models. Today's screencast walks through how to use spatial resampling for evaluating a model, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on geographic data. `r emo::ji("map")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "wVrcw_ek3a4")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Geographic data is special when it comes to, well, basically everything! This includes modeling and especially _evaluating_ models. This week's `#TidyTuesday` is all about exploring [spatial data](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-11-02/readme.md) for the [`#30DayMapChallenge`](https://github.com/tjukanovt/30DayMapChallenge) this month, and especially the spData and spDataLarge packages along with the book [_Geocomputation with R_](https://geocompr.robinlovelace.net/).
+
+Let's use the dataset of landslides (plus not-landslide locations) in Southern Ecuador.
+
+```{r}
+data("lsl", package = "spDataLarge")
+landslides <- as_tibble(lsl)
+landslides
+```
+
+How are these landslides (plus not landslides) distributes in this area?
+
+```{r}
+ggplot(landslides, aes(x, y)) +
+  stat_summary_hex(aes(z = elev), alpha = 0.6, bins = 12) +
+  geom_point(aes(color = lslpts), alpha = 0.7) +
+  coord_fixed() +
+  scale_fill_viridis_c() +
+  scale_color_manual(values = c("gray90", "midnightblue")) +
+  labs(fill = "Elevation", color = "Landslide?")
+
+```
+
+
+## Create spatial resamples
+
+In tidymodels, one of the first steps we recommend thinking about is "spending your data budget". When it comes to geographic data, points close to each other are often similar so we don't want to randomly resample our observations. Instead, we want to use a resampling strategy that accounts for that autocorrelation. Let's create both resamples that are appropriate to spatial data and resamples that might work for "regular", non-spatial data but are not a good fit for geographic data.
+
+
+```{r}
+library(tidymodels)
+library(spatialsample)
+
+set.seed(123)
+good_folds <- spatial_clustering_cv(landslides, coords = c("x", "y"), v = 5)
+good_folds
+
+set.seed(234)
+bad_folds <- vfold_cv(landslides, v = 5, strata = lslpts)
+bad_folds
+```
+
+The [spatialsample](https://spatialsample.tidymodels.org/) package currently provides one method for spatial resampling and we are interested in hearing about what other methods we should support next.
+
+How do these resamples look? Let's create a little helper function:
+
+```{r, fig.width=7.5}
+plot_splits <- function(split) {
+  p <- bind_rows(analysis(split) %>%
+                   mutate(analysis = "Analysis"),
+                 assessment(split) %>%
+                   mutate(analysis = "Assessment")) %>%
+    ggplot(aes(x, y, color = analysis)) + 
+    geom_point(size = 1.5, alpha = 0.8) +
+    coord_fixed() +
+    labs(color = NULL)
+  print(p)
+}
+```
+
+The spatial resampling creates resamples where observations close to each other are together.
+
+```{r animation.hook="gifski", fig.width=6, fig.height=3.5}
+walk(good_folds$splits, plot_splits)
+```
+
+The regular resampling doesn't do this; it just randomly resamples all observations.
+
+```{r animation.hook="gifski", fig.width=6, fig.height=3.5}
+walk(bad_folds$splits, plot_splits)
+```
+
+This second option is _not_ a good idea for geographic data.
+
+## Fit and evaluate model
+
+Let's create a straightforward logistic regression model to predict whether a location saw a landslide based on the other characteristics like slope, elevation, amount of water flow, etc. We can estimate how well this _same_ model fits the data both with our regular folds and our special spatial resampling.
+
+```{r}
+glm_spec <- logistic_reg()
+lsl_form <- lslpts ~ slope + cplan + cprof + elev + log10_carea
+
+lsl_wf <- workflow(lsl_form, glm_spec)
+
+doParallel::registerDoParallel()
+set.seed(2021)
+regular_rs <- fit_resamples(lsl_wf, bad_folds)
+set.seed(2021)
+spatial_rs <- fit_resamples(lsl_wf, good_folds)
+```
+
+How did our results turn out?
+
+```{r}
+collect_metrics(regular_rs)
+collect_metrics(spatial_rs)
+```
+
+If we use the "regular" resampling, we get a more optimistc estimate of performance which would fool us into thinking our model would perform better than it really could. The lower performance estimate using spatial resampling is more accurate because of the autocorrelation of this geographic data; observations near each other are more alike than observations far apart. With geographic data, it's important to use an appropriate model evaluation strategy!
