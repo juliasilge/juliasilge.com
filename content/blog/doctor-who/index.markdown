@@ -43,7 +43,7 @@ episodes %>%
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-2-1.png" width="2400" />
 
-These are very spiky, with much higher viewer numbers for special episodes like season finales or Christmas episodes.
+These are quite spiky, with much higher viewer numbers for special episodes like season finales or Christmas episodes.
 
 I have only ever watched episodes of Doctor Who after they arrive on US streaming platforms, but I will say that I haven’t caught up on some of the latest seasons, much like many viewers in the UK.
 
