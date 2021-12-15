@@ -1,7 +1,7 @@
 ---
 title: "Topic modeling for #TidyTuesday Spice Girls lyrics"
 author: Julia Silge
-date: '2021-12-16'
+date: '2021-12-15'
 slug: spice-girls
 categories:
   - rstats
