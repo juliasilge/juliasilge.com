@@ -1,0 +1,189 @@
+---
+title: "Topic modeling for #TidyTuesday Spice Girls lyrics"
+author: Julia Silge
+date: '2021-12-16'
+slug: spice-girls
+categories:
+  - rstats
+tags:
+  - rstats
+subtitle: ''
+summary: "Learn how to train, explore, and understand an unsupervised topic model for text data."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(scales)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge), but instead of being about [tidymodels](https://www.tidymodels.org/), this screencast focuses on unsupervised modeling for text, specifically topic modeling. Today's screencast walks through how to build a [structural topic model](https://www.structuraltopicmodel.com/) and then how to explore and understand it, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Spice Girls lyrics. `r emo::ji("dancing_women")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "2i0Cu8MMGRc")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to "discover" topics in the [lyrics of Spice Girls songs](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-12-14/readme.md). Instead of a supervised or predictive model where our observations have labels, this is an unsupervised approach.
+
+```{r}
+library(tidyverse)
+
+lyrics <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-12-14/lyrics.csv')
+```
+
+How many albums and songs are there in this dataset?
+
+```{r}
+lyrics %>% distinct(album_name)
+lyrics %>% distinct(album_name, song_name)
+```
+
+
+Let's start by tokenizing this text and removing a small set of stop words (as well as fixing that punctuation).
+
+```{r}
+library(tidytext)
+
+tidy_lyrics <- 
+  lyrics %>%
+  mutate(song_name = str_replace_all(song_name, "\x92", "'")) %>%
+  unnest_tokens(word, line) %>%
+  anti_join(get_stopwords())
+```
+
+What are the most common words in these songs after removing stop words?
+
+```{r}
+tidy_lyrics %>%
+  count(word, sort = TRUE)
+```
+
+How about per song?
+
+```{r}
+tidy_lyrics %>%
+  count(song_name, word, sort = TRUE)
+```
+
+This gives us an idea of how many counts per words we have per song, for our modeling.
+
+## Train a topic model
+
+To train a topic model with the stm package, we need to create a sparse matrix from our tidy dataframe of tokens.
+
+```{r}
+lyrics_sparse <-
+  tidy_lyrics %>%
+  count(song_name, word) %>%
+  cast_sparse(song_name, word, n)
+
+dim(lyrics_sparse)
+```
+
+This means there are `r nrow(lyrics_sparse)` songs (i.e. documents) and `r ncol(lyrics_sparse)` different tokens (i.e. terms or words) in our dataset for modeling.
+
+A topic model like this one models:
+
+- each **document** as a mixture of topics
+- each **topic** as a mixture of words
+
+The most important parameter when training a topic modeling is `K`, the number of topics. This is like `k` in k-means in that it is a hyperparamter of the model and we must choose this value ahead of time. We could [try multiple different values](https://juliasilge.com/blog/evaluating-stm/) to find the best value for `K`, but this is a very small dataset so let's just stick with `K = 4`.
+
+```{r}
+library(stm)
+set.seed(123)
+topic_model <- stm(lyrics_sparse, K = 4, verbose = FALSE)
+```
+
+To get a quick view of the results, we can use `summary()`.
+
+```{r}
+summary(topic_model)
+```
+
+## Explore topic model results
+
+To explore more deeply, we can `tidy()` the topic model results to get a dataframe that we can compute on. There are two possible outputs for this topic model, the `"beta"` matrix of topic-word probabilities and the `"gamma"` matrix of document-topic probabilities. Let's start with the first.
+
+```{r}
+word_topics <- tidy(topic_model, matrix = "beta")
+word_topics
+```
+
+Since this is a tidy dataframe, we can manipulate it how we like, include making a visualization showing the highest probability words from each topic.
+
+```{r, fig.width=6, fig.height=6}
+word_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>%
+  ungroup() %>%
+  mutate(topic = paste("Topic", topic)) %>%
+  ggplot(aes(beta, reorder_within(term, beta, topic), fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(topic), scales = "free_y") +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_y_reordered() +
+  labs(x = expression(beta), y = NULL)
+```
+
+What about the other matrix? We also need to pass in the `document_names`.
+
+```{r}
+song_topics <- tidy(topic_model, matrix = "gamma",
+                    document_names = rownames(lyrics_sparse))
+song_topics
+```
+
+Remember that each document (song) was modeled as a mixture of topics. How did that turn out?
+
+```{r, fig.width=11, fig.height=10}
+song_topics %>%
+  mutate(song_name = fct_reorder(document, gamma),
+         topic = factor(topic)) %>%
+  ggplot(aes(gamma, topic, fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(song_name), ncol = 4) +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(x = expression(gamma), y = "Topic")
+```
+
+The songs near the top of this plot are mostly one topic, while the songs near the bottom are more a mix.
+
+There is a TON more you can do with topic models. For example, we can take the trained topic model and, using some supplementary metadata on our documents, estimate regressions for the _proportion_ of each document about a topic with the metadata as the predictors. For example, let's estimate regressions for our four topics with the album name as the predictor. This asks the question, "Do the topics in Spice Girls songs change across albums?"
+
+```{r}
+effects <- 
+  estimateEffect(
+    1:4 ~ album_name, 
+    topic_model, 
+    tidy_lyrics %>% distinct(song_name, album_name) %>% arrange(song_name)
+  )
+```
+
+Again, to get a quick view of the results, we can use `summary()`, but to dive deeper, we will want to use `tidy()`.
+
+```{r}
+summary(effects)
+tidy(effects)
+```
+
+Looks like there is no statistical evidence of change in the lyrical content of the Spice Girls songs across these three albums!
