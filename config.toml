@@ -1,7 +1,7 @@
 baseURL = "/"
 theme = "hugo-apero"
 languageCode = "en"
-title = "Hugo Apéro"
+title = "Julia Silge"
 author = "Julia Silge"
 copyright = "" # set to override the auto generated copyright using org info and now year
 googleAnalytics = ""
@@ -25,30 +25,30 @@ enableEmoji = true
     ordered = false
   [markup.highlight]
     # one of: https://xyproto.github.io/splash/docs/
-    style = "github"
+    style = "colorful"
 
 [params]
   orgName = "Julia Silge"
   orgLocal = ""
   description = "A data science blog"
-  favicon = "/img/favicon.ico"
-  logo = "/img/blogophonic-mark-dark.png"
-  mainSections = ["blog"]
-  navallcaps = false
+  favicon = "/img/icon.png"
+  logo = ""
+  mainSections = ""
+  navallcaps = true
   # show/hide social icons in site header & footer
   # configure social icons and links below in [[params.social]]
   socialInHeader = false
-  socialInFooter = true
+  socialInFooter = false
   # Default image for social sharing and search engines.
   # Place image file in `static` folder and specify image name here.
   sharing_image = "/img/sharon-mccutcheon-62vi3TG5EDg-unsplash_small.jpg"
   # Twitter username (without @). Used when a visitor shares your site on Twitter.
-  twitter = "apreshill"
+  twitter = "juliasilge"
 
   # use a built-in color theme
   # one of: forest / grayscale / peach / plum /
   #         poppy / sky / violet / water
-  theme = "violet"
+  theme = "grayscale"
 
   # or, leave theme empty & make your own palette
   # see docs at https://hugo-apero.netlify.app/blog/color-themes/
@@ -61,20 +61,20 @@ enableEmoji = true
   # serif options: Fraunces / EB Garamond / Bitter
   # sans-serif options: Commissioner / Atkinson Hyperlegible / Metropolis
   # if you import your own fonts, name them here too
-  customtextFontFamily = "Atkinson Hyperlegible"
-  customheadingFontFamily = "Fraunces"
+  customtextFontFamily = ""
+  customheadingFontFamily = ""
   # alternatively, leave empty and select basic font options: sans-serif or serif
   # for more http://tachyons.io/docs/typography/font-family/
-  textFontFamily = "sans-serif"
-  headingFontFamily = "sans-serif"
+  textFontFamily = "avenir"
+  headingFontFamily = "Metropolis"
 
   # Configuration of https://utteranc.es/ for comments
   [params.utterances]
     use_utterances = true
-    repo_name = "apreshill/apero"
-    issue_term = "pathname" # url, pathname, or title
-    theme = "boxy-light"
-    label = "comments :crystal_ball:"
+    repo_name = "juliasilge/juliasilge.com"
+    issue_term = "title" # url, pathname, or title
+    theme = "github-light"
+    label = "comments :speech_balloon:"
 
   # Configuration of math rendering
   [params.math]
@@ -122,20 +122,15 @@ enableEmoji = true
 [menu]
   # Configure header
   [[menu.header]]
-    name = "Blog"
-    title = "Blog"
-    url = "/blog/"
-    weight = 1
-  [[menu.header]]
     name = "About"
     title = "About me"
     url = "/about/"
-    weight = 2
+    weight = 1
   [[menu.header]]
-    name = "Projects"
-    title = "Project Portfolio"
-    url = "/project/"
-    weight = 3
+    name = "Blog"
+    title = "Blog"
+    url = "/blog/"
+    weight = 2
 
   # Configure footer
   [[menu.footer]]
@@ -143,11 +138,6 @@ enableEmoji = true
     title = "License"
     url = "/license/"
     weight = 1
-  [[menu.footer]]
-    name = "Contact"
-    title = "Contact form"
-    url = "/contact/"
-    weight = 2
 
 # see https://gohugo.io/about/hugo-and-gdpr/
 [privacy]

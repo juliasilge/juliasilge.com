@@ -2,7 +2,7 @@
 title: "About me"
 description: |
   A data science blog
-show_header: true
+show_header: false
 sidebar_left: true
 # Keep this! Do not edit.
 cascade:
