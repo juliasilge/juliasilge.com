@@ -12,3 +12,4 @@ LondonStageJSON.zip
 *.csv
 resources
 .DS_Store
+.hugo_build.lock
