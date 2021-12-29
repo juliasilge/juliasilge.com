@@ -10,7 +10,7 @@
   {{ with .Params.categories }}
   <dl class="f6 lh-copy">
     <dt class="fw7">Categories:</dt>
-    <dd class="fw5 ml0">{{ range . }} <a href="{{ "category/" | absURL }}{{ . | urlize }}">{{ . }}</a> {{ end }}</dd>
+    <dd class="fw5 ml0">{{ range . }} <a href="{{ "categories/" | absURL }}{{ . | urlize }}">{{ . }}</a> {{ end }}</dd>
   </dl>
   {{ end }}
   {{ with .Params.series }}
