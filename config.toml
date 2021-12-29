@@ -1,4 +1,4 @@
-baseURL = "/"
+baseURL = "https://juliasilge.com/"
 theme = "hugo-apero"
 languageCode = "en"
 title = "Julia Silge"
