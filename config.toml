@@ -117,7 +117,7 @@ enableEmoji = true
 [taxonomies]
   category = "categories"
   series = "series"
-  tag = "tags"
+  tag = "tag"
 
 [menu]
   # Configure header
