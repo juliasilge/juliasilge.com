@@ -1,7 +1,7 @@
 ---
 title: Blog
-description: |
-  
+description: | 
+  Machine learning, text analysis, and more
 author: "Julia Silge"
 show_post_thumbnail: true
 thumbnail_left: true # for list-sidebar only
