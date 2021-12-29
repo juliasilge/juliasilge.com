@@ -1,7 +1,7 @@
 ---
 title: "Julia Silge"
 subtitle: "Data Scientist & Software Engineer"
-description: "I'm an author, international keynote speaker, and real-world practitioner focusing on data analysis and machine learning practice. I love making beautiful charts and communicating about technical topics with diverse audiences."
+description: "I'm a tool builder, author, international keynote speaker, and real-world practitioner focusing on data analysis and machine learning. I love making beautiful charts and communicating about technical topics with diverse audiences."
 images:
   - img/illustrated_blog_avatar.png
 image_left: true
