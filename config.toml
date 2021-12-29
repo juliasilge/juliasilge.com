@@ -14,6 +14,12 @@ preserveTaxonomyNames = true
 ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_cache$", "\\.knit\\.md$", "\\.utf8\\.md$"]
 enableEmoji = true
 
+
+# To make my old links/feeds work still:
+[permalinks]
+  tags = "/tag/:slug/"
+  categories = "/category/:slug/"
+
 [markup]
   defaultMarkdownHandler = "goldmark"
   [markup.goldmark.renderer]
