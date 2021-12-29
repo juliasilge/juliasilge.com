@@ -30,7 +30,7 @@ enableEmoji = true
     ordered = false
   [markup.highlight]
     # one of: https://xyproto.github.io/splash/docs/
-    style = "colorful"
+    style = "friendly"
 
 [params]
   orgName = "Julia Silge"
