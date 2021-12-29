@@ -115,9 +115,9 @@ enableEmoji = true
       url       = "https://scholar.google.com/citations?hl=en&user=lQBVIkkAAAAJ"
 
 [taxonomies]
-  category = "categories"
+  category = "category"
   series = "series"
-  tag = "tags"
+  tag = "tag"
 
 [menu]
   # Configure header
