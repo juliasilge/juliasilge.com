@@ -15,10 +15,9 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_cache$", "\\.knit\\.md$", "\\.utf8\
 enableEmoji = true
 
 
-# To make my old links/feeds work still:
+# To make my old RSS feed work still:
 [permalinks]
   tags = "/tag/:slug/"
-  categories = "/category/:slug/"
 
 [markup]
   defaultMarkdownHandler = "goldmark"
