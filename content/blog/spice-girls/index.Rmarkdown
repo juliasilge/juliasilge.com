@@ -99,7 +99,7 @@ lyrics_sparse <-
 dim(lyrics_sparse)
 ```
 
-This means there are `r nrow(lyrics_sparse)` songs (i.e. documents) and `r ncol(lyrics_sparse)` different tokens (i.e. terms or words) in our dataset for modeling.
+This means there are 31 songs (i.e. documents) and `r ncol(lyrics_sparse)` different tokens (i.e. terms or words) in our dataset for modeling.
 
 A topic model like this one models:
 

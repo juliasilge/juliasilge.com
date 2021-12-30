@@ -140,7 +140,7 @@ dim(lyrics_sparse)
 
     ## [1]  31 979
 
-This means there are songs (i.e. documents) and 979 different tokens (i.e. terms or words) in our dataset for modeling.
+This means there are 31 songs (i.e. documents) and different tokens (i.e. terms or words) in our dataset for modeling.
 
 A topic model like this one models:
 
