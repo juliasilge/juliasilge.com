@@ -1,7 +1,7 @@
 ---
 title: "Text predictors for #TidyTuesday chocolate ratings"
 author: Julia Silge
-date: '2022-01-20'
+date: '2022-01-21'
 slug: chocolate-ratings
 categories:
   - rstats
