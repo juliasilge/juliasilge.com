@@ -1,0 +1,233 @@
+---
+title: "Predict ratings for #TidyTuesday board games"
+author: Julia Silge
+date: '2022-01-28'
+slug: board-games
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "Use custom feature engineering for board game categories, tune an xgboost model with racing methods, and use explainability methods for deeper understanding."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from just getting started to tuning more complex models. That is the topic of today's more advanced screencast, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on board games. `r emo::ji("dice")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "HTJ0nt3codo")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict ratings for [board games](https://github.com/rfordatascience/tidytuesday/blob/master/data/2022/2022-01-25/readme.md) based on the main characteristics like number of players and game category. How are the ratings distributed?
+
+```{r}
+library(tidyverse)
+
+ratings <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-25/ratings.csv')
+details <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-01-25/details.csv')
+
+ratings_joined <-
+    ratings %>%
+    left_join(details, by = "id")
+
+ggplot(ratings_joined, aes(average)) +
+    geom_histogram(alpha = 0.8)
+```
+
+This is a pretty sizeable rectangular dataset so let's use an xgboost model; xgboost is a good fit for that type of dataset. How is a characteristic like the minimum recommended age for the game related to the rating?
+
+```{r, fig.width=6}
+ratings_joined %>%
+    filter(!is.na(minage)) %>%
+    mutate(minage = cut_number(minage, 4)) %>%
+    ggplot(aes(minage, average, fill = minage)) +
+    geom_boxplot(alpha = 0.2, show.legend = FALSE)
+```
+
+This kind of relationship is what we hope our xgboost model can use.
+
+## Tune an xgboost model
+
+Let’s start our modeling by setting up our "data budget." We'll subset down to only variables like minimum/maximum age and playing time, and stratify by our outcome `average`.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+game_split <-
+    ratings_joined %>%
+    select(name, average, matches("min|max"), boardgamecategory) %>%
+    na.omit() %>%
+    initial_split(strata = average)
+game_train <- training(game_split)
+game_test <- testing(game_split)
+
+set.seed(234)
+game_folds <- vfold_cv(game_train, strata = average)
+game_folds
+```
+
+Next, let’s set up our feature engineering. In the screencast, I walk through starting with default tokenizing and then creating a custom tokenizer. Sometimes a dataset requires more care and custom feature engineering; the tidymodels ecosystem provides lots of fluent options for common use cases and then the ability to extend our framework for more specific needs while maintaining good statistical practice.
+
+```{r}
+library(textrecipes)
+
+split_category <- function(x) {
+    x %>%
+        str_split(", ") %>%
+        map(str_remove_all, "[:punct:]") %>%
+        map(str_squish) %>%
+        map(str_to_lower) %>%
+        map(str_replace_all, " ", "_")
+}
+
+game_rec <-
+    recipe(average ~ ., data = game_train) %>%
+    update_role(name, new_role = "id") %>%
+    step_tokenize(boardgamecategory, custom_token = split_category) %>%
+    step_tokenfilter(boardgamecategory, max_tokens = 30) %>%
+    step_tf(boardgamecategory)
+
+## just to make sure this works as expected
+game_prep <- prep(game_rec)
+bake(game_prep, new_data = NULL) %>% str()
+```
+
+Now let’s create a tunable xgboost model specification, with only some of the most important hyperparameters tunable, and combine it with our preprocessing recipe in a `workflow()`. To achieve higher performance, we could try more careful and/or extensive choices for hyperparameter tuning.
+
+```{r}
+xgb_spec <-
+    boost_tree(
+        trees = tune(),
+        mtry = tune(),
+        min_n = tune(),
+        learn_rate = 0.01
+    ) %>%
+    set_engine("xgboost") %>%
+    set_mode("regression")
+
+xgb_wf <- workflow(game_rec, xgb_spec)
+xgb_wf
+```
+
+Now we can [use `tune_race_anova()` to eliminate parameter combinations](https://finetune.tidymodels.org/reference/tune_race_anova.html) that are not doing well. 
+
+```{r}
+library(finetune)
+doParallel::registerDoParallel()
+
+set.seed(234)
+xgb_game_rs <-
+    tune_race_anova(
+        xgb_wf,
+        game_folds,
+        grid = 20,
+        control = control_race(verbose_elim = TRUE)
+    )
+
+xgb_game_rs
+```
+
+Done!
+
+## Evaluate models
+
+We can visualize how the possible parameter combinations we tried did during the "race." Notice how we saved a TON of time by not evaluating the parameter combinations that were clearly doing poorly on all the resamples; we only kept going with the good parameter combinations.
+
+```{r}
+plot_race(xgb_game_rs)
+```
+
+We ended up with three hyperparameter configurations in the end, all of which are pretty much the same.
+
+```{r}
+show_best(xgb_game_rs)
+```
+
+Let’s use `last_fit()` to fit one final time to the **training** data and evaluate one final time on the **testing** data.
+
+```{r}
+
+xgb_last <-
+    xgb_wf %>%
+    finalize_workflow(select_best(xgb_game_rs, "rmse")) %>%
+    last_fit(game_split)
+
+xgb_last
+```
+
+An xgboost model is not directly interpretable but we have several options for understanding _why_ the model makes the predictions it does. Check out [Chapter 18 of _Tidy Modeling with R_](https://www.tmwr.org/explain.html) for more on model interpretability with tidymodels.
+
+Let's start with model-based variable importance using the [vip](https://koalaverse.github.io/vip/) package.
+
+```{r}
+library(vip)
+
+xgb_fit <- extract_fit_parsnip(xgb_last)
+vip(xgb_fit, geom = "point", num_features = 12)
+```
+
+The maximum playing time and minimum age are the most important predictors driving the predicted game rating.
+
+We can also use a model-agnostic approach like Shapley Additive Explanations, where the average contributions of features are computed under different combinations or "coalitions" of feature orderings. The [SHAPforxgboost](https://liuyanguu.github.io/SHAPforxgboost/) package makes setting this up for an xgboost model particularly nice.
+
+We start by computing what we need for SHAP values, with the underlying xgboost engine fit and the predictors in a matrix format.
+
+```{r}
+library(SHAPforxgboost)
+
+game_shap <-
+    shap.prep(
+        xgb_model = extract_fit_engine(xgb_fit),
+        X_train = bake(game_prep, 
+                       has_role("predictor"), 
+                       new_data = NULL, 
+                       composition = "matrix")
+    )
+```
+
+Now we can make visualizations! We can look at an overall summary:
+
+```{r, fig.height=8}
+shap.plot.summary(game_shap)
+```
+
+Or create partial dependence plots for specific variables:
+
+```{r}
+shap.plot.dependence(
+    game_shap,
+    x = "minage",
+    color_feature = "minplayers",
+    size0 = 1.2,
+    smooth = FALSE, add_hist = TRUE
+)
+```
+
+Learning this kind of complex, non-linear behavior is where xgboost models shine.
+
