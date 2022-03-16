@@ -1,0 +1,192 @@
+---
+title: "Poisson regression for #TidyTuesday counts of R package vignettes"
+author: Julia Silge
+date: '2022-03-16'
+slug: rstats-vignettes
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+subtitle: ''
+summary: "The tidymodels framework provides extension packages for specialized tasks such as Poisson regression. Learn how to fit a zero-inflated model for understanding how R package releases are related to number of vignettes."
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: true
+projects: []
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, 
+                      echo = TRUE, dpi = 300, cache.lazy = FALSE,
+                      tidy = "styler", fig.width = 8, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light(base_size = 12, base_family = "IBMPlexSans"))
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+```
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages. Our team recently released new versions of [parsnip](https://parsnip.tidymodels.org/) and the [parsnip-adjacent packages](https://www.tmwr.org/models.html#parsnip-adjacent-packages) for specialized models to CRAN, and this screencast shows how to use some of these models with the [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on R package vignettes. `r emo::ji("page_facing_up")`
+
+```{r, echo=FALSE}
+blogdown::shortcode("youtube", "NEPEgfryId8")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to understand how the number of releases and number of vignettes are related for [R packages](https://github.com/rfordatascience/tidytuesday/blob/master/data/2022/2022-03-15/readme.md).
+
+```{r}
+library(tidyverse)
+cran <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-03-15/cran.csv')
+```
+
+What does this data look like, for a few packages that I maintain?
+
+```{r}
+cran %>% filter(package == "tidytext")
+cran %>% filter(package == "rsample")
+```
+
+Let's create a summarized dataset that computes, for each package, the first release data, the number of releases, and the number of vignettes as of the most recent release.
+
+```{r}
+vignette_counts <-
+  cran %>%
+  group_by(package) %>%
+  summarise(release_date = first(date),
+            releases = n(),
+            vignettes = last(rnw) + last(rmd))
+```
+
+What proportion of packages have no vignettes?
+
+```{r}
+mean(vignette_counts$vignettes < 1)
+```
+
+A lot!! We can see this in a histogram as well:
+
+```{r}
+vignette_counts %>%
+  ggplot(aes(vignettes)) +
+  geom_histogram(bins = 12) +
+  scale_x_continuous(trans = scales::pseudo_log_trans(base = 10))
+```
+
+Just a few packages have a ton of vignettes:
+
+```{r}
+vignette_counts %>% filter(vignettes > 20)
+```
+
+Let's make one more exploratory plot before creating models.
+
+```{r}
+vignette_counts %>%
+  mutate(has_vignette = vignettes > 0) %>%
+  ggplot(aes(has_vignette, releases, color = has_vignette, fill = has_vignette)) +
+  geom_boxplot(size = 1.5, alpha = 0.2, show.legend = FALSE) +
+  scale_y_log10() +
+  coord_flip() +
+  labs(x = "Has a vignette?")
+```
+
+Looks like packages with more releases are more likely to have a vignette.
+
+## Using Poisson regression
+
+We have a number of [specialized packages](https://www.tidymodels.org/packages/#specialized-packages), outside the core tidymodels packages, for less general, more specialized data analysis and modeling tasks. One of these is [poissonreg](https://poissonreg.tidymodels.org/), for Poisson regression models such as those we can use with this count data.
+
+```{r}
+library(tidymodels)
+library(poissonreg)
+
+poisson_wf <- workflow(vignettes ~ releases, poisson_reg()) 
+fit(poisson_wf, data = vignette_counts)
+```
+
+This model says that packages with more releases have more vignettes. Since poissonreg is not a core tidymodels package, we need to load it separately via `library(poissonreg)`.
+
+## Zero-inflated Poisson: ZIP!!!
+
+A better model for this dataset on R package vignettes might be [zero-inflated Poisson](https://en.wikipedia.org/wiki/Zero-inflated_model), since there are **so** many zeroes. A ZIP model like this mixes two models, one that generates zeroes and one that models counts with the Poisson distribution. There are two sets of covariates for these two models, that can be different:
+
+-   one for the count data
+-   one for the probability of zeroes
+
+How can we create this kind of model in tidymodels?
+
+```{r}
+zip_spec <- poisson_reg() %>% set_engine("zeroinfl")
+zip_wf <- workflow() %>%
+    add_variables(outcomes = vignettes, predictors = releases) %>%
+    add_model(zip_spec, formula = vignettes ~ releases | releases)
+
+fit(zip_wf, data = vignette_counts)
+```
+
+The coefficients here are different than when we didn't use a ZIP model, but we still see that packages with more releases have more vignettes (and packages with fewer releases are more likely to have zero vignettes).
+
+Notice the `formula` argument we used in `add_model()`; this kind of [special model formula](https://www.tmwr.org/workflows.html#workflow-encoding) can be used with a lot of the parsnip-adjacent packages. The formula `vignettes ~ releases | releases` specifies which columns affect the counts and which affect the model for the probability of zero counts. Here these are the same, but [they don't have to be](https://parsnip.tidymodels.org/reference/details_poisson_reg_zeroinfl.html).
+
+## Bootstrap intervals for the coefficients
+
+You can do all the normal things with these models, depending on the purpose of your model. Often these kinds of models are trained [to be used in inference](https://www.tmwr.org/software-modeling.html#model-types), so let's show how you might determine bootstrap intervals for model coefficients.
+
+First let's create a set of bootstrap resamples:
+
+```{r}
+folds <- bootstraps(vignette_counts, times = 1000, apparent = TRUE)
+folds
+```
+
+Now let's create a little function to get out the coefficients for the probability-of-zero-counts part of our ZIP model. (We could instead or in addition get out the Poisson/count part of the ZIP model.)
+
+```{r}
+get_coefs <- function(x) {
+    x %>% 
+        extract_fit_engine() %>% 
+        tidy(type = "zero")
+}
+
+fit(zip_wf, data = vignette_counts) %>% get_coefs()
+```
+
+We can now take this function and use it for all of our bootstrap resamples with our ZIP model.
+
+```{r}
+ctrl <- control_resamples(extract = get_coefs)
+
+doParallel::registerDoParallel()
+set.seed(123)
+zip_res <- fit_resamples(zip_wf, folds, control = ctrl)
+zip_res
+```
+
+What is in that `.extracts` column?
+
+```{r}
+zip_res$.extracts[[33]]
+```
+
+We can use [tidyr](https://tidyr.tidyverse.org/) to get those out, and then we can visualize the bootstrap intervals.
+
+```{r}
+zip_res %>% 
+    select(id, .extracts) %>% 
+    unnest(.extracts) %>%
+    unnest(.extracts) %>%
+    ggplot(aes(x = estimate, fill = term)) +
+    geom_histogram(color = "white", alpha = 0.8, show.legend = FALSE) + 
+    facet_wrap(~ term, scales = "free_x") + 
+    geom_vline(xintercept = 0, lty = 2, size = 1.2, color = "gray70")
+```
