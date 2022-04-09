@@ -10,7 +10,7 @@ categories:
 tags:
   - rstats
   - tidymodels
-summary: "The tidymodels framework provides extension packages for specialized tasks such as Poisson regression. Learn how to fit a zero-inflated model for understanding how R package releases are related to number of vignettes."
+summary: "Understand how much money colleges spend on sports using linear modeling and bootstrap intervals."
 ---
 
 ```{r setup}
