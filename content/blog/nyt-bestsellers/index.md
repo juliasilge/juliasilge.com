@@ -152,11 +152,9 @@ Next, let's build a modeling `workflow()` with feature engineering and a
 linear SVM (support vector machine). To prepare the text of the author
 names to be used in modeling, let's use [wordpiece
 tokenization](https://huggingface.co/docs/transformers/tokenizer_summary#wordpiece).
-This approach to subword tokenization works by finding all the
-characters and then progressively learning merge rules to form subword
-tokens from the original characters. When you use wordpiece, you don't
-find the most common subwords, but instead the subwords with the maximum
-likelihood. These merge rules can be applied to new data, including new
+This approach to subword tokenization is based on the [vocabulary used
+by BERT](https://en.wikipedia.org/wiki/BERT_(language_model)) (I
+misspoke in the video) and can be applied to new data, including new
 names we've never seen before.
 
 ``` r
