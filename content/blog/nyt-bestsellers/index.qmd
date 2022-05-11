@@ -1,0 +1,211 @@
+---
+title: "Predict #TidyTuesday NYT bestsellers"
+author: Julia Silge
+date: '2022-05-11'
+format: hugo
+slug: nyt-bestsellers
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "Will a book be on the NYT bestseller list a long time, or a short time? We walk through how to use wordpiece tokenization for the author names, and how to deploy your model as a REST API."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 8, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages.
+This screencast walks through how to use wordpiece tokenization for text feature engineering, as well as how to create a REST API to deploy your model.
+Let's learn more about all this using the [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on NYT bestsellers, which comes to us via [Post45](https://doi.org/10.18737/CNJV1733p4520220211).
+📚
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "p9ndhpyBVQc")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict which [NYT bestsellers](https://github.com/rfordatascience/tidytuesday/blob/master/data/2022/2022-05-10/readme.md) will be on the bestsellers list for a long time, based on the book's author.
+
+```{r}
+library(tidyverse)
+nyt_titles <- read_tsv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-05-10/nyt_titles.tsv')
+
+glimpse(nyt_titles)
+```
+
+How is `total_weeks` on the NYT bestseller list distributed?
+
+```{r}
+nyt_titles %>%
+  ggplot(aes(total_weeks)) +
+  geom_histogram(bins = 40)
+```
+
+Which authors have been on the list the *most*?
+
+```{r}
+nyt_titles %>%
+  group_by(author) %>%
+  summarise(
+    n = n(),
+    total_weeks = median(total_weeks)
+  ) %>%
+  arrange(-n)
+```
+
+That Danielle Steel! Amazing!!
+
+## Build a model
+
+Let's start our modeling by setting up our "data budget." We'll subset down to only `author` and `total_weeks`, transform the `total_weeks` variable to "long" and "short, and stratify by our outcome `total_weeks`.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+books_split <-
+  nyt_titles %>%
+  transmute(
+    author,
+    total_weeks = if_else(total_weeks > 4, "long", "short")
+  ) %>%
+  na.omit() %>%
+  initial_split(strata = total_weeks)
+books_train <- training(books_split)
+books_test <- testing(books_split)
+
+set.seed(234)
+book_folds <- vfold_cv(books_train, strata = total_weeks)
+book_folds
+```
+
+How is `total_weeks` distributed?
+
+```{r}
+books_train %>% count(total_weeks)
+```
+
+Next, let's build a modeling `workflow()` with feature engineering and a linear SVM (support vector machine).
+To prepare the text of the author names to be used in modeling, let's use [wordpiece tokenization](https://huggingface.co/docs/transformers/tokenizer_summary#wordpiece).
+This approach to subword tokenization works by finding all the characters and then progressively learning merge rules to form subword tokens from the original characters.
+When you use wordpiece, you don't find the most common subwords, but instead the subwords with the maximum likelihood.
+These merge rules can be applied to new data, including new names we've never seen before.
+
+```{r}
+library(textrecipes)
+
+svm_spec <- svm_linear(mode = "classification")
+
+books_rec <-
+  recipe(total_weeks ~ author, data = books_train) %>%
+  step_tokenize_wordpiece(author, max_chars = 10) %>%
+  step_tokenfilter(author, max_tokens = 100) %>%
+  step_tf(author) %>%
+  step_normalize(all_numeric_predictors())
+
+## just to see how it is working:
+prep(books_rec) %>% bake(new_data = NULL) %>% glimpse()
+
+book_wf <- workflow(books_rec, svm_spec)
+book_wf
+```
+
+## Evaluate, finalize, and deploy model
+
+Now that we have our modeling workflow ready to go, let's evaluate how it performs using our resampling folds.
+We need to set some custom metrics because this linear SVM does not produce class probabilities.
+
+```{r}
+doParallel::registerDoParallel()
+
+set.seed(123)
+books_metrics <- metric_set(accuracy, sens, spec)
+book_rs <- fit_resamples(book_wf, resamples = book_folds, metrics = books_metrics)
+collect_metrics(book_rs)
+```
+
+Not what you'd call incredibly impressive, but at least we are pretty sure there's no data leakage!
+😆
+
+
+Let’s use `last_fit()` to fit one final time to the **training** data and evaluate one final time on the **testing** data.
+
+```{r}
+final_rs <- last_fit(book_wf, books_split, metrics = books_metrics)
+collect_metrics(final_rs)
+```
+
+Notice that this is the first time we've used the testing data. Our metrics on the testing data are about the same as from our resampling folds.
+
+How did we do predicting the two classes?
+
+```{r}
+collect_predictions(final_rs) %>%
+  conf_mat(total_weeks, .pred_class) %>%
+  autoplot()
+```
+
+We are better at predicting the books that are on the list for a short time than those that are on for a long time.
+
+If we decide this model is good to go and we want to use it in the future, we can extract out the fitted workflow. This object can be used for prediction:
+
+```{r}
+final_fitted <- extract_workflow(final_rs)
+augment(final_fitted, new_data = slice_sample(books_test, n = 1))
+
+## again:
+augment(final_fitted, new_data = slice_sample(books_test, n = 1))
+```
+
+We can also examine this model (which is just linear with coefficients) to understand what drives its predictions.
+
+```{r}
+tidy(final_fitted) %>%
+  slice_max(abs(estimate), n = 20) %>%
+  mutate(
+    term = str_remove_all(term, "tf_author_"),
+    term = fct_reorder(term, abs(estimate))
+  ) %>%
+  ggplot(aes(x = abs(estimate), y = term, fill = estimate > 0)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_fill_discrete(labels = c("Fewer weeks", "More weeks")) +
+  labs(x = "Estimate from linear SVM (absolute value)", y = NULL, 
+       fill = "How many weeks on\nbestseller list?")
+```
+
+Finally, we can deploy this model as a REST API using the [vetiver](https://vetiver.tidymodels.org/) package.
+
+```{r}
+library(vetiver)
+v <- vetiver_model(final_fitted, "nyt_authors")
+v
+
+library(plumber)
+pr() %>%
+  vetiver_api(v)
+## pipe to `pr_run()` to start the API
+```
