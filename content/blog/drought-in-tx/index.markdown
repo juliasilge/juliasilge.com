@@ -277,3 +277,6 @@ drought_sf %>%
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="1440" />
 
 This is so interesting! Those high RMSE counties are urban counties like those containing Dallas and Forth Worth, Houston, Austin, etc. In an urban county, the median household income is high relative to the drought being experienced. Again, this is not a causal claim, but instead a way to use these tools to understand the relationship.
+
+If you're interested in trying out the new spatialsample features like this one, please [install from GitHub](https://github.com/tidymodels/spatialsample/). Now is a great time for feedback because we'll be doing a CRAN release soon!
+
