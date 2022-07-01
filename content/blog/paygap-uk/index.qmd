@@ -1,0 +1,202 @@
+---
+title: "Three ways to look at #TidyTuesday UK pay gap data"
+author: Julia Silge
+date: '2022-06-30'
+format: hugo
+slug: pay-gap-uk
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "Use summarization, a single linear model, and bootstrapping to understand what economic activities involve a larger pay gap for women."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 6)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://juliasilge.com/category/tidymodels/) demonstrating how to use the [tidymodels](https://www.tidymodels.org/) packages, from starting out to more complex topics.
+This screencast walks through three ways to understand this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on the pay gap between women and men in the UK.
+💸
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "qu2wsbIeedY")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to understand how [the pay gap between women and men](https://github.com/rfordatascience/tidytuesday/tree/master/data/2022/2022-06-28) in the UK is related to the types of economic activities workers are involved in.
+Let's take three different ways to look at this relationship, walking up in complexity and robustness. The different sectors of work are stored in the `sic_codes` variable, and each company can be involved in multiple. We can use `separate_rows()` from tidyr to, well, separate this into rows!
+
+```{r}
+library(tidyverse)
+
+paygap_raw <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-06-28/paygap.csv')
+
+paygap_raw %>% 
+  select(sic_codes) %>% 
+  separate_rows(sic_codes, sep = ":") %>% 
+  count(sic_codes, sort = TRUE)
+```
+
+How is the median difference in hourly pay distibuted?
+
+```{r}
+#| fig.height: 4
+paygap_raw %>%
+  ggplot(aes(diff_median_hourly_percent / 100)) +
+  geom_histogram(bins = 25) +
+  scale_x_continuous(limits = c(-0.5, 0.5))
+```
+
+Notice that more companies are on the positive side (women earn less) than the negative side (women earn more) but there are plenty of examples where women in more at the individual observation level.
+
+I'd like to understand more about those SIC codes, so I looked them up [from the UK government and downloaded their CSV](https://www.gov.uk/government/publications/standard-industrial-classification-of-economic-activities-sic).
+
+```{r}
+uk_sic_codes <- 
+  read_csv("SIC07_CH_condensed_list_en.csv") %>% 
+  janitor::clean_names()
+
+uk_sic_codes
+```
+
+Let's join this together with the original data, and use `separate_rows()`:
+
+```{r}
+paygap_joined <-
+  paygap_raw %>%
+  select(employer_name, diff_median_hourly_percent, sic_codes) %>%
+  separate_rows(sic_codes, sep = ":") %>%
+  left_join(uk_sic_codes, by = c("sic_codes" = "sic_code"))
+
+paygap_joined
+```
+
+There are a lot of different codes there! Let's treat these codes like text and tokenize them:
+
+```{r}
+library(tidytext)
+
+paygap_tokenized <-
+  paygap_joined %>%
+  unnest_tokens(word, description) %>%
+  anti_join(get_stopwords()) %>%
+  na.omit()
+
+paygap_tokenized
+```
+
+This is going to be too many words for us to analyze altogether, so let's filter down to only the most-used words, as well as making that `diff_median_hourly_percent` variable a percent out of 100.
+
+```{r}
+top_words <- 
+  paygap_tokenized %>%
+  count(word) %>%
+  filter(!word %in% c("activities", "n.e.c", "general", "non")) %>%
+  slice_max(n, n = 40) %>%
+  pull(word)
+
+paygap <-
+    paygap_tokenized %>%
+    filter(word %in% top_words) %>%
+    transmute(
+        diff_wage = diff_median_hourly_percent / 100, 
+        word
+    )
+
+paygap
+```
+
+This format is now ready for us to take three different approaches to understanding how economic activities (as described by these words) are related to the gender pay gap.
+
+## Summarize and visualize
+
+Our first approach is to summarize and visualize. This gives a first, baseline understanding of how these quantities are related.
+
+```{r}
+paygap %>% 
+    group_by(word) %>%
+    summarise(diff_wage = mean(diff_wage)) %>%
+    mutate(word = fct_reorder(word, diff_wage)) %>%
+    ggplot(aes(diff_wage, word)) +
+    geom_point(alpha = 0.9, size = 2, color = "midnightblue") +
+    labs(x = "% increase in men's hourly wages compared to women's", y = NULL)
+```
+
+## Fit a single linear model
+
+Our second approach is to fit a linear model one time to all the data. This is a pretty big dataset, so there is plenty of data for fitting a simple model. We can force a model with no intercept by using the formula `diff_wage ~ 0 + word`:
+
+```{r}
+paygap_fit <- lm(diff_wage ~ 0 + word, data = paygap)
+summary(paygap_fit)
+```
+
+We can visualize these results in a number of ways. One nice option is the [dotwhisker](https://cran.r-project.org/package=dotwhisker) package:
+
+```{r}
+library(dotwhisker)
+
+tidy(paygap_fit) %>%
+    mutate(
+        term = str_remove(term, "word"),
+        term = fct_reorder(term, -estimate)
+    ) %>%
+    dwplot(vars_order = levels(.$term),
+           dot_args = list(size = 2, color = "midnightblue"),
+           whisker_args = list(color = "midnightblue")) +
+    scale_x_continuous(labels = scales::percent) +
+    labs(x = "% increase in men's hourly wages compared to women's", y = NULL)
+```
+
+## Fit many models
+
+Our third and final approach is to fit the same linear model not one time, but many times. This can give us a more robust estimate of the errors, especially. We can use the `reg_intervals()` function from rsample for this:
+
+```{r}
+library(rsample)
+
+paygap_intervals <- 
+    reg_intervals(diff_wage ~ 0 + word, data = paygap)
+
+paygap_intervals
+```
+
+We could visualize this in a number of ways. Let's use `geom_crossbar()`:
+
+```{r}
+paygap_intervals %>%
+    mutate(
+        term = str_remove(term, "word"),
+        term = fct_reorder(term, .estimate)
+    ) %>%
+    ggplot(aes(.estimate, term)) +
+    geom_crossbar(aes(xmin = .lower, xmax = .upper),
+                  color = "midnightblue", alpha = 0.8) +
+    scale_x_continuous(labels = scales::percent) +
+    labs(x = "% increase in men's hourly wages compared to women's", y = NULL)
+```
+
+For this dataset, there aren't huge differences between our three approaches. We would expect the errors from the bootstrap resampling to be most realistic, but often a simple summarization can be the best choice.
