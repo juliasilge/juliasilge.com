@@ -8,7 +8,7 @@ show_intro: true
 show_outro: false
 intro: |
 
-  I am a data scientist and software engineer at [RStudio PBC](https://rstudio.com/) where I work on [open source modeling tools](https://www.tidymodels.org/). My last name is pronounced SILL-GHEE (two syllables, short `i`, hard `g`). I love making beautiful charts, the statistical programming language R, Jane Austen, black coffee, and red wine.
+  I am a data scientist and software engineer at [RStudio PBC](https://rstudio.com/) where I work on [open source MLOps tooling](https://vetiver.rstudio.com/). My last name is pronounced SILL-GHEE (two syllables, short `i`, hard `g`). I love making beautiful charts, the statistical programming language R, Jane Austen, black coffee, and red wine.
 
   I studied physics and astronomy, finishing my PhD in 2005. I worked in academia (teaching and doing research) and ed tech before moving into data science in 2015 and discovering R. I am an author, an international speaker, and a real-world practitioner focusing on data analysis and machine learning. I have written books with my collaborators about [text mining](https://www.tidytextmining.com/), [supervised machine learning for text](https://smltar.com/), and [modeling with tidy data principles](https://www.tmwr.org/) in R. You can find me on [Twitter](https://twitter.com/juliasilge) and [GitHub](https://github.com/juliasilge). 
 
