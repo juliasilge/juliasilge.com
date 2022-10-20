@@ -1,0 +1,231 @@
+---
+title: "Find high FREX and high lift words for #TidyTuesday Stranger Things dialogue"
+author: Julia Silge
+date: '2022-10-20'
+format: hugo
+slug: stranger-things
+categories:
+  - rstats
+tags:
+  - rstats
+summary: "New functionality in tidytext supports identifying high FREX and high lift words from topic modeling results."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This screencast demonstrates how to use some brand-new functionality in [tidytext](https://juliasilge.github.io/tidytext/reference/stm_tidiers.html), using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on *Stranger Things*. 👻 
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "2wcDYVb-2AY")
+```
+
+</br>
+
+The code in this blog post requires the GitHub version of tidytext as of publication. Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to "discover" topics in [*Stranger Things*](https://github.com/rfordatascience/tidytuesday/tree/master/data/2022/2022-10-18) dialogue. Instead of a supervised or predictive model where our observations have labels, this is an unsupervised approach. Let's start by reading in the data, and focusing only on the show's dialogue:
+
+```{r}
+library(tidyverse)
+episodes_raw <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-10-18/stranger_things_all_dialogue.csv')
+
+dialogue <-
+  episodes_raw %>%
+  filter(!is.na(dialogue)) %>%
+  mutate(season = paste0("season", season))
+
+dialogue
+```
+
+To start out with, let's create a tidy, tokenized version of the dialogue.
+
+```{r}
+library(tidytext)
+
+tidy_dialogue <-
+  dialogue %>%
+  unnest_tokens(word, dialogue)
+
+tidy_dialogue
+```
+
+What words from the dialogue have the [highest log odds](https://juliasilge.github.io/tidylo/) of coming from each season?
+
+```{r}
+library(tidylo)
+
+tidy_dialogue %>%
+  count(season, word, sort = TRUE) %>%
+  bind_log_odds(season, word, n) %>%
+  filter(n > 20) %>%
+  group_by(season) %>%
+  slice_max(log_odds_weighted, n = 10) %>%
+  mutate(word = reorder_within(word, log_odds_weighted, season)) %>%
+  ggplot(aes(log_odds_weighted, word, fill = season)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(season), scales = "free") +
+  scale_y_reordered() +
+  labs(y = NULL)
+```
+
+We can see that:
+
+-   Season 1 is more about Barb 😭 and Will
+-   Season 2 introduces Bob 😭😭, Dart, and the rainbow/sunflower imagery
+-   Season 3 has Russians and the Scoops shop
+-   Season 4 brings us Eddie, Vecna, and Yuri
+
+Lots of proper nouns in here!
+
+## Train a topic model
+
+To train a topic model with the stm package, we need to create a sparse matrix from our tidy tibble of tokens. Let's treat each episode of *Stranger Things* as a document.
+
+```{r}
+dialogue_sparse <-
+  tidy_dialogue %>%
+  mutate(document = paste(season, episode, sep = "_")) %>%
+  count(document, word) %>%
+  filter(n > 5) %>%
+  cast_sparse(document, word, n)
+
+dim(dialogue_sparse)
+```
+
+This means there are 34 episodes (i.e. documents) and `r ncol(dialogue_sparse)` different tokens (i.e. terms or words) in our dataset for modeling.
+
+A topic model like this one models:
+
+- each **document** as a mixture of topics
+- each **topic** as a mixture of words
+
+The most important parameter when training a topic modeling is `K`, the number of topics. This is like `k` in k-means in that it is a hyperparamter of the model and we must choose this value ahead of time. We could [try multiple different values](https://juliasilge.com/blog/evaluating-stm/) to find the best value for `K`, but this is a pretty small dataset so let's just stick with `K = 5`.
+
+```{r}
+library(stm)
+set.seed(123)
+topic_model <- stm(dialogue_sparse, K = 5, verbose = FALSE)
+```
+
+To get a quick view of the results, we can use summary().
+
+```{r}
+summary(topic_model)
+```
+
+## Explore topic model results
+
+To explore more deeply, we can `tidy()` the topic model results to get a dataframe that we can compute on. The `"beta"` matrix of topic-word probabilities gives us the highest probability words from each topic.
+
+```{r}
+tidy(topic_model, matrix = "beta") %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10, ) %>%
+  mutate(rank = row_number()) %>%
+  ungroup() %>%
+  select(-beta) %>%
+  pivot_wider(
+    names_from = "topic", 
+    names_glue = "topic {.name}",
+    values_from = term
+  ) %>%
+  select(-rank) %>%
+  knitr::kable()
+```
+
+Well, that's pretty boring, isn't it?! This can happen a lot with topic modeling; you [typically don't want to remove stop words before building topic models](http://dx.doi.org/10.1162/tacl_a_00099) but then the highest probability words look mostly the same from each topic.
+
+People who work with topic models have come up with alternate metrics for identifying important words. One is FREX (high frequency _and_ high exclusivity) and another is lift. Look at the details at `?stm::calcfrex()` and `?stm::calclift()` to learn more about these metrics, but they measure about what they sound like they do.
+
+Before now, there was no support in tidytext for these alternate ways of identifying important words, but I just merged in new functionality for this. To use these as of today, you will need to install from GitHub via `devtools::install_github("juliasilge/tidytext")`.
+
+We can find high FREX words:
+
+```{r}
+tidy(topic_model, matrix = "frex") %>%
+  group_by(topic) %>%
+  slice_head(n = 10) %>%
+  mutate(rank = row_number()) %>%
+  ungroup() %>%
+  pivot_wider(
+    names_from = "topic", 
+    names_glue = "topic {.name}",
+    values_from = term
+  ) %>%
+  select(-rank) %>%
+  knitr::kable()
+```
+
+Or high lift words:
+
+```{r}
+tidy(topic_model, matrix = "lift") %>%
+  group_by(topic) %>%
+  slice_head(n = 10) %>%
+  mutate(rank = row_number()) %>%
+  ungroup() %>%
+  pivot_wider(
+    names_from = "topic", 
+    names_glue = "topic {.name}",
+    values_from = term
+  ) %>%
+  select(-rank) %>%
+  knitr::kable()
+```
+
+These return a ranked set of words (not the underlying metrics themselves). They give us a much clearer idea of what makes each topic unique!
+
+To connect the topics back to seasons, let's use `tidy()` again, finding the `"gamma"` matrix of document-topic probabilities.
+
+```{r}
+episode_gamma <- tidy(
+  topic_model, 
+  matrix = "gamma",
+  document_names = rownames(dialogue_sparse)
+)
+episode_gamma
+```
+
+We can parse these results to find the season info again:
+
+```{r}
+episodes_parsed <- 
+  episode_gamma %>%
+  separate(document, c("season", "episode"), sep = "_")
+
+episodes_parsed
+```
+
+Let's visualize how these document-topic probabilities are distributed over the seasons.
+
+```{r}
+episodes_parsed %>%
+    mutate(topic = factor(topic)) %>%
+    ggplot(aes(topic, gamma, fill = topic)) +
+    geom_boxplot(alpha = 0.7, show.legend = FALSE) +
+    facet_wrap(vars(season)) +
+    labs(y = expression(gamma))
+```
+
+Each season mostly consists of one of these topics, with season 3 consisting of more like two topics. We could also look at how topic is related to season by using `stm::estimateEffect()`, like [in this blog post](https://juliasilge.com/blog/spice-girls/).
+
