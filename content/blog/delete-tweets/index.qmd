@@ -99,7 +99,7 @@ There are rate limits on the Twitter API so we may not be able to get through al
 
 Now that the bulk of my tweets are deleted and I'm only dealing with a couple hundred tweets, I will probably use `get_my_timeline()` moving forward to delete any more.
 
-I'm not quite ready to remove all the people I follow and who follow me, but my plan to do is:
+I'm not quite ready to remove all the people I follow and who follow me, but my plan to do so is:
 
 - Use `get_friends()` to find the people I follow, and then iterate through with `post_unfollow_user()` to unfollow all of them.
 - Use `get_followers()` to find the people who follow me, and then probably `user_block()` and immediately `user_unblock()` through the list so no one follows me anymore but I don't have those folks blocked long-term.
