@@ -1,0 +1,109 @@
+---
+title: "Delete all your tweets using rtweet"
+author: Julia Silge
+date: '2022-11-10'
+format: hugo
+slug: delete-tweets
+categories:
+  - rstats
+tags:
+  - rstats
+summary: "Worried about how a certain social media platform is going and want to start removing yourself? Learn how to delete all your tweets."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+If you are involved in data science social media, I expect that you are quite familiar with the turmoil on Twitter; it [doesn't look like it is getting better](https://twitter.com/CaseyNewton/status/1590724257608134657). Twitter, and specifically the data science community on Twitter, has brought so much positive to my life and career, and I feel pretty sad about the situation, both the massive layoffs and what looks like a real change for the worse in the platform.
+
+If you are looking to remove yourself from Twitter, you can delete your account, but I've seen some folks say a better initial move may be to delete the content from your account (perhaps including followers and following), and then take your account private or deactivate it. In this blog post, I'll walk through how to use [rtweet](https://docs.ropensci.org/rtweet/) to automate some of these steps.
+
+## Get your tweets
+
+The first step I took was to [download my Twitter archive](https://help.twitter.com/en/managing-your-account/how-to-download-your-twitter-archive). It's my data, so I wanted to make sure I have it! Also, it helps a lot with deletion to have a local copy of all the tweet IDs; if you use `get_my_timeline()` from rtweet, the API only returns a small number of tweets.
+
+Inside of the archive Twitter sends you, there is a file called `tweets.js` that contains all the info on your tweets. I manually opened this file and deleted the header `window.YTD.direct_messages.part0 = ` so the file starts with the square bracket and can be read by jsonlite.
+
+```{r}
+library(jsonlite)
+my_tweets <- as_tibble(fromJSON("tweets.js")$tweet)
+glimpse(my_tweets)
+```
+
+WOW, so many tweets. I'm not quite ready to totally empty out my account, so let's only delete things older than three months.
+
+```{r}
+library(lubridate)
+
+delete_these_tweets <-
+  my_tweets %>%
+  mutate(created_at = as.POSIXct(created_at, format="%a %b %d %H:%M:%S +0000 %Y"),
+         created_at = as.Date(created_at)) %>%
+  filter(created_at < today() - days(90)) %>%
+  select(created_at, id)
+
+delete_these_tweets
+```
+
+What am I actually deleting here?
+
+```{r}
+delete_these_tweets %>%
+  ggplot(aes(created_at)) +
+  geom_histogram() +
+  labs(x = NULL, y = "Number of tweets")
+```
+
+Again, WOW.
+
+## Delete your tweets
+
+We can use `post_destroy()` from rtweet to delete a tweet by single status ID. Yes, we are going to delete these one by one! You do need to [set up authentication](https://docs.ropensci.org/rtweet/articles/auth.html) so you can interact with Twitter from R.
+
+```{r}
+library(rtweet)
+post_destroy(delete_these_tweets$id[234])
+```
+
+Now it's time to delete _all_ of them; I'll iterate through the tweet IDs using purrr. For this blog post, I'll only delete a random 10 of them.
+
+```{r}
+#| message: false
+result <-
+  delete_these_tweets %>%
+  slice_sample(n = 10) %>%
+  mutate(success = map(id, possibly(post_destroy, otherwise = "fail")))
+
+result
+```
+
+There are rate limits on the Twitter API so we may not be able to get through all the tweets in one go. The saved `result` records which ones worked, so we can use `result %>% filter(success == "fail")` as the input to try deleting again.
+
+## Next steps
+
+Now that the bulk of my tweets are deleted and I'm only dealing with a couple hundred tweets, I will probably use `get_my_timeline()` moving forward to delete any more.
+
+I'm not quite ready to remove all the people I follow and who follow me, but my plan to do is:
+
+- Use `get_friends()` to find the people I follow, and then iterate through with `post_unfollow_user()` to unfollow all of them.
+- Use `get_followers()` to find the people who follow me, and then probably `user_block()` and immediately `user_unblock()` through the list so no one follows me anymore but I don't have those folks blocked long-term.
+
+This is kind of a depressing blog post to write, but I am super happy to be able to handle my own Twitter data with tools that are so comfortable to me. If you are interested in exploring a new kind of social network, you can [find me on Mastodon](https://mastodon.social/@juliasilge).
+
+
