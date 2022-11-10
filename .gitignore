@@ -14,3 +14,4 @@ resources
 .DS_Store
 .hugo_build.lock
 SIC07_CH_condensed_list_en.csv
+tweets.js
