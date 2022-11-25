@@ -1,0 +1,241 @@
+---
+title: "High cardinality predictors for #TidyTuesday museums in the UK"
+author: Julia Silge
+date: '2022-11-25'
+format: hugo
+slug: uk-museums
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "Learn how to handle predictors with high cardinality using tidymodels for accreditation data on UK museums."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This screencast focuses on model development, specifically what to do when you have a categorical predictor with many (*too many*) values, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on museums in the UK. 🇬🇧
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "7GP-K-i6Y54")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal is to predict the whether a [museum in the UK](https://github.com/rfordatascience/tidytuesday/tree/master/data/2022/2022-11-22) is accredited or not, based on other characteristics of the museum like its size and subject matter. Let's start by reading in the data:
+
+```{r}
+library(tidyverse)
+museums <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-11-22/museums.csv')
+
+museums %>%
+  count(Accreditation)
+```
+
+There isn't too much imbalance in this dataset, which is convenient for modeling. How is size related to accreditation?
+
+```{r}
+museums %>%
+  count(Accreditation, Size)
+```
+
+What about the subject matter of the museums? The `Subject_Matter` variable is of high cardinality with `r n_distinct(museums$Subject_Matter)` different values, so if we want to include this in our model, we will need to think about how to handle such a large number of values. Let's make a visualization with only the top six subjects.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 6
+top_subjects <- museums %>% count(Subject_Matter) %>% slice_max(n, n = 6) %>% pull(Subject_Matter)
+
+museums %>%
+  filter(Subject_Matter %in% top_subjects) %>%
+  count(Subject_Matter, Accreditation) %>%
+  ggplot(aes(Accreditation, n, fill = Accreditation)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(Subject_Matter), scales = "free_y") +
+  labs(x = NULL, y = "Number of museums")
+```
+
+We can make the same kind of plot for the governance model of the museums.
+
+```{r}
+top_gov <- museums %>% count(Governance) %>% slice_max(n, n = 4) %>% pull(Governance)
+
+museums %>%
+  filter(Governance %in% top_gov) %>%
+  count(Governance, Accreditation) %>%
+  ggplot(aes(Accreditation, n, fill = Accreditation)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(Governance), scales = "free_y") +
+  labs(x = NULL, y = "Number of museums")
+```
+
+These kinds of relationships are what we want to use all together to predict whether a museum is accredited or not.
+
+Let's pare down the number of columns and do a bit of transformation:
+
+```{r}
+museum_parsed <-
+  museums %>%
+  select(museum_id, Accreditation, Governance, Size,
+         Subject_Matter, Year_opened, Year_closed, Area_Deprivation_index) %>%
+  mutate(Year_opened = parse_number(Year_opened),
+         IsClosed = if_else(Year_closed == "9999:9999", "Open", "Closed")) %>%
+  select(-Year_closed) %>%
+  na.omit() %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(museum_id = as.character(museum_id))
+
+glimpse(museum_parsed)
+```
+
+This is the data we'll use for modeling!
+
+## Feature engineering for high cardinality
+
+We can start by loading the tidymodels metapackage, splitting our data into training and testing sets, and creating cross-validation samples. Think about this stage as *spending your data budget*.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+museum_split <- initial_split(museum_parsed, strata = Accreditation)
+
+museum_train <- training(museum_split)
+museum_test <- testing(museum_split)
+
+set.seed(234)
+museum_folds <- vfold_cv(museum_train, strata = Accreditation)
+museum_folds
+```
+
+Next, let's create our feature engineering recipe, handling the high cardinality `Subject_Matter` variable using a likelihood or effect encoding. The way that this works is that we train a little mini model with only `Subject_Matter` and our outcome `Accreditation` and replace the original categorical variable with a single numeric column that measures its effect; the coefficients from the mini model are used to compute this new numeric column.
+
+```{r}
+library(embed)
+
+museum_rec <- 
+  recipe(Accreditation ~ ., data = museum_train) %>%
+  update_role(museum_id, new_role = "id") %>%
+  step_lencode_glm(Subject_Matter, outcome = vars(Accreditation)) %>%
+  step_dummy(all_nominal_predictors())
+
+museum_rec
+```
+
+You can see what numeric value is used for each of the subject matter options by using `tidy()`:
+
+```{r}
+prep(museum_rec) %>%
+  tidy(number = 1)
+```
+
+One of the great things about this kind of effect encoding is that it can handle new values (like a new subject matter) at prediction time; the effect encoding stores a value to use when we haven't seen a certain subject matter during training.
+
+```{r}
+prep(museum_rec) %>%
+  tidy(number = 1) %>%
+  filter(level == "..new")
+```
+
+As you can probably imagine, using a little mini model inside of your feature engineering is powerful but can lead to overfitting when done incorrectly. Be sure that you use resampling to estimate performance and always keep a test set held out for a final check. You can read more about these kinds of encodings in [Chapter 17 of *Tidy Modeling with R*](https://www.tmwr.org/categorical.html#using-the-outcome-for-encoding-predictors).
+
+## Build a model workflow
+
+Let's create an xgboost model specification to use with this feature engineering recipe.
+
+```{r}
+xgb_spec <-
+  boost_tree(
+    trees = tune(),
+    min_n = tune(),
+    mtry = tune(),
+    learn_rate = 0.01
+  ) %>%
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+xgb_wf <- workflow(museum_rec, xgb_spec)
+```
+
+I really like using racing methods with xgboost (so efficient!) so let's use the [finetune](https://finetune.tidymodels.org/) package for tuning. Check out [this blog post](https://juliasilge.com/blog/baseball-racing/) for another racing example.
+
+```{r}
+library(finetune)
+doParallel::registerDoParallel()
+
+set.seed(345)
+xgb_rs <- tune_race_anova(
+  xgb_wf,
+  resamples = museum_folds,
+  grid = 15,
+  control = control_race(verbose_elim = TRUE)
+)
+
+xgb_rs
+```
+
+## Evaluate and finalize model
+
+How did our tuning with racing go?
+
+```{r}
+collect_metrics(xgb_rs)
+plot_race(xgb_rs)
+```
+
+The racing method allowed us to drop the model hyperparameter configurations that weren't performing very well. Now let's finalize our original tuneable workflow with the best-performing hyperparameter configuration, and then **fit** one time to the training data and **evaluate** one time on the testing data.
+
+```{r}
+xgb_last <- xgb_wf %>%
+  finalize_workflow(select_best(xgb_rs, "accuracy")) %>%
+  last_fit(museum_split)
+
+xgb_last
+```
+
+How did this final model do, evaluated using the testing set?
+
+```{r}
+collect_metrics(xgb_last)
+```
+
+We can see the model's performance across the classes using a confusion matrix.
+
+```{r}
+collect_predictions(xgb_last) %>%
+    conf_mat(Accreditation, .pred_class)
+```
+
+Looks like we have performance that is about the same for both classes. Let's also check out the variables that turned out to be most important.
+
+```{r}
+library(vip)
+xgb_last %>%
+  extract_fit_engine() %>%
+  vip()
+```
+
+The most important predictors of accreditation are the governance model and whether the museum has closed, but then we see the subject matter, so it was worth it to figure out a way to handle this predictor with many values.
