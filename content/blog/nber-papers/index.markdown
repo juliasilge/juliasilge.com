@@ -111,10 +111,10 @@ nber_folds <- vfold_cv(nber_train, strata = program_category)
 nber_folds
 ```
 
-    ## #  10-fold cross-validation using stratification 
+    ## #  10-fold cross-validation using stratification
     ## # A tibble: 10 × 2
-    ##    splits               id    
-    ##    <list>               <chr> 
+    ##    splits               id
+    ##    <list>               <chr>
     ##  1 <split [23539/2617]> Fold01
     ##  2 <split [23539/2617]> Fold02
     ##  3 <split [23540/2616]> Fold03
@@ -143,15 +143,15 @@ nber_rec
 ```
 
     ## Recipe
-    ## 
+    ##
     ## Inputs:
-    ## 
+    ##
     ##       role #variables
     ##    outcome          1
     ##  predictor          2
-    ## 
+    ##
     ## Operations:
-    ## 
+    ##
     ## Tokenization for title
     ## Text filtering for title
     ## Term frequency-inverse document frequency with title
@@ -169,11 +169,11 @@ multi_spec
 ```
 
     ## Multinomial Regression Model Specification (classification)
-    ## 
+    ##
     ## Main Arguments:
     ##   penalty = tune()
     ##   mixture = 1
-    ## 
+    ##
     ## Computational engine: glmnet
 
 Now it’s time to put the preprocessing and model together in a `workflow()`.
@@ -186,22 +186,22 @@ nber_wf
     ## ══ Workflow ════════════════════════════════════════════════════════════════════
     ## Preprocessor: Recipe
     ## Model: multinom_reg()
-    ## 
+    ##
     ## ── Preprocessor ────────────────────────────────────────────────────────────────
     ## 4 Recipe Steps
-    ## 
+    ##
     ## • step_tokenize()
     ## • step_tokenfilter()
     ## • step_tfidf()
     ## • step_downsample()
-    ## 
+    ##
     ## ── Model ───────────────────────────────────────────────────────────────────────
     ## Multinomial Regression Model Specification (classification)
-    ## 
+    ##
     ## Main Arguments:
     ##   penalty = tune()
     ##   mixture = 1
-    ## 
+    ##
     ## Computational engine: glmnet
 
 Since the lasso regularization `penalty` is a hyperparameter of the model (we can’t find the best value from fitting the model a single time), let’s tune over a grid of possible `penalty` parameters.
@@ -222,10 +222,10 @@ nber_rs
 ```
 
     ## # Tuning results
-    ## # 10-fold cross-validation using stratification 
+    ## # 10-fold cross-validation using stratification
     ## # A tibble: 10 × 4
-    ##    splits               id     .metrics          .notes          
-    ##    <list>               <chr>  <list>            <list>          
+    ##    splits               id     .metrics          .notes
+    ##    <list>               <chr>  <list>            <list>
     ##  1 <split [23539/2617]> Fold01 <tibble [40 × 5]> <tibble [0 × 1]>
     ##  2 <split [23539/2617]> Fold02 <tibble [40 × 5]> <tibble [0 × 1]>
     ##  3 <split [23540/2616]> Fold03 <tibble [40 × 5]> <tibble [0 × 1]>
@@ -250,8 +250,8 @@ show_best(nber_rs)
 ```
 
     ## # A tibble: 5 × 7
-    ##    penalty .metric .estimator  mean     n std_err .config              
-    ##      <dbl> <chr>   <chr>      <dbl> <int>   <dbl> <chr>                
+    ##    penalty .metric .estimator  mean     n std_err .config
+    ##      <dbl> <chr>   <chr>      <dbl> <int>   <dbl> <chr>
     ## 1 0.00234  roc_auc hand_till  0.784    10 0.00249 Preprocessor1_Model10
     ## 2 0.00428  roc_auc hand_till  0.783    10 0.00244 Preprocessor1_Model11
     ## 3 0.00127  roc_auc hand_till  0.783    10 0.00251 Preprocessor1_Model09
@@ -285,21 +285,21 @@ final_rs
 ```
 
     ## # Resampling results
-    ## # Manual resampling 
+    ## # Manual resampling
     ## # A tibble: 1 × 6
     ##   splits               id               .metrics  .notes  .predictions .workflow
-    ##   <list>               <chr>            <list>    <list>  <list>       <list>   
+    ##   <list>               <chr>            <list>    <list>  <list>       <list>
     ## 1 <split [26156/8719]> train/test split <tibble … <tibbl… <tibble [8,… <workflo…
 
-How did our final model perform on the training data?
+How did our final model perform on the testing data?
 
 ``` r
 collect_metrics(final_rs)
 ```
 
     ## # A tibble: 2 × 4
-    ##   .metric  .estimator .estimate .config             
-    ##   <chr>    <chr>          <dbl> <chr>               
+    ##   .metric  .estimator .estimate .config
+    ##   <chr>    <chr>          <dbl> <chr>
     ## 1 accuracy multiclass     0.609 Preprocessor1_Model1
     ## 2 roc_auc  hand_till      0.779 Preprocessor1_Model1
 

@@ -200,7 +200,7 @@ final_rs <-
 final_rs
 ```
 
-How did our final model perform on the training data?
+How did our final model perform on the testing data?
 
 ```{r}
 collect_metrics(final_rs)
