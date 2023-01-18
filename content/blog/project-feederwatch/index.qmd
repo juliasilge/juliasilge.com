@@ -1,0 +1,271 @@
+---
+title: "To downsample imbalanced data or not, with #TidyTuesday bird feeders"
+author: Julia Silge
+date: '2023-01-18'
+format: hugo
+slug: project-feederwatch
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "Will squirrels will come eat from your bird feeder? Let's fit a model both with and without downsampling to find out."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This screencast focuses on model development and what happens when we use downsampling for class imbalance, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on [Project FeederWatch](https://feederwatch.org/explore/raw-dataset-requests/), a citizen science project for bird science. 🪶
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "fzZ4mI-lb8w")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Let's say you hate squirrels, especially how they come and eat from your bird feeder! Our modeling goal is to predict whether a [bird feeder site](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-01-10/) will be used by squirrels, based on other characteristics of the bird feeder site like the surrounding yard and habitat. Let's start by reading in the data:
+
+```{r}
+library(tidyverse)
+
+site_data <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-10/PFW_count_site_data_public_2021.csv') %>%
+  mutate(squirrels = ifelse(squirrels, "squirrels", "no squirrels"))
+
+glimpse(site_data)
+```
+
+This is a pretty big dataset, although it has a lot of `NA` values!
+
+```{r}
+site_data %>%
+  count(squirrels)
+```
+
+There are _a lot_ of squirrels out there eating from bird feeders! We need to decide whether to address this imbalance in our dataset.
+
+How are other characteristics of these sites related to the presence of squirrels?
+
+```{r}
+site_data %>%
+  filter(!is.na(squirrels)) %>%
+  group_by(squirrels) %>%
+  summarise(nearby_feeders = mean(nearby_feeders, na.rm = TRUE))
+```
+
+What about some of the other variables like those describing the habitat?
+
+```{r}
+site_data %>%
+  filter(!is.na(squirrels)) %>%
+  group_by(squirrels) %>%
+  summarise(across(contains("hab"), mean, na.rm = TRUE)) %>%
+  pivot_longer(contains("hab")) %>%
+  mutate(name = str_remove(name, "hab_")) %>%
+  ggplot(aes(value, fct_reorder(name, value), fill = squirrels)) +
+  geom_col(alpha = 0.8, position = "dodge") +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = "% of locations", y = NULL, fill = NULL)
+```
+
+Habitats like residential areas, woods, and parks have proportionally more squirrels, while habitats like deserts, orchards, and agricultural areas have proportionally fewer squirrels.
+
+## Build a model
+
+We can start by loading the tidymodels metapackage, splitting our data into training and testing sets, and creating cross-validation samples. Think about this stage as _spending your data budget_.
+
+Like I said in the video, we may want to consider [using spatial resampling](https://juliasilge.com/blog/drought-in-tx/) for this dataset, since bird feeder sites closer to each other are going to be similar. In the interest of focusing on only the downsampling issue, let's not incorporate that for now and move forward with regular resampling. This could mean our estimates of performance are too optimistic for new data.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+feeder_split <- site_data %>%
+  filter(!is.na(squirrels)) %>%
+  select(where(~!all(is.na(.x)))) %>%
+  select(-loc_id, -proj_period_id, -fed_yr_round) %>%
+  select(squirrels, everything()) %>%
+  initial_split(strata = squirrels)
+
+feeder_train <- training(feeder_split)
+feeder_test <- testing(feeder_split)
+
+set.seed(234)
+feeder_folds <- vfold_cv(feeder_train, strata = squirrels)
+feeder_folds
+```
+
+Next, let's create our feature engineering recipe. There are a lot of `NA` values, so let's impute these using the mean value for each of the variables. Then, let's remove any variables that have near-zero variance.
+
+```{r}
+feeder_rec <- 
+  recipe(squirrels ~ ., data = feeder_train) %>%
+  step_impute_mean(all_numeric_predictors()) %>%
+  step_nzv(all_numeric_predictors())
+
+## we can `prep()` just to check that it works:
+prep(feeder_rec)
+```
+
+Should we use downsampling (available in the [themis](https://themis.tidymodels.org/index.html) package) in this recipe? Let's not add it for now, but instead try it out both ways.
+
+Let's create a regularized regression model specification to use with this feature engineering recipe.
+
+```{r}
+glmnet_spec <- 
+  logistic_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+```
+
+A good way to try multiple modeling approaches in a principled and safe way with tidymodels is to use a [workflow set](https://workflowsets.tidymodels.org/). A workflow set allows us to hold multiple different sets of feature engineering and model estimation combinations together and use tuning to evaluate them all at once.
+
+```{r}
+library(themis)
+
+wf_set <-
+  workflow_set(
+    list(basic = feeder_rec,
+         downsampling = feeder_rec %>% step_downsample(squirrels)),
+    list(glmnet = glmnet_spec)
+  )
+
+wf_set
+```
+
+We only have two elements in our set here, but you can use lots! Let's use tuning to evaluate different possible penalty values for each option, and let's be sure to include several metrics so we can understand the model performance thoroughly.
+
+```{r}
+narrower_penalty <- penalty(range = c(-3, 0))
+
+doParallel::registerDoParallel()
+set.seed(345)
+tune_rs <- 
+  workflow_map(
+    wf_set,
+    "tune_grid",
+    resamples = feeder_folds,
+    grid = 15,
+    metrics = metric_set(accuracy, mn_log_loss, sensitivity, specificity),
+    param_info = parameters(narrower_penalty)
+  )
+
+tune_rs
+```
+
+## Evaluate and finalize model
+
+How did our tuning go?
+
+```{r}
+autoplot(tune_rs) + theme(legend.position = "none")
+```
+
+Notice that we can get high accuracy but the sensitivity is _terrible_, nearly zero. If we want both sensitivity and specificity to be not awful, we need one of the second round of models. Which were these?
+
+```{r}
+rank_results(tune_rs, rank_metric = "sensitivity")
+```
+
+Like we probably guessed, these are the models that _do_ use downsampling as part of our preprocessing. If we choose a model based on a metric that looks at performance overall (both classes) we would choose the model _without_ downsampling:
+
+```{r}
+rank_results(tune_rs, rank_metric = "mn_log_loss")
+```
+
+Say we decide we want to be able to do better at identifying both the positive and negative classes. We can extract those downsampled model results out:
+
+```{r}
+#| fig-height: 8
+downsample_rs <-
+  tune_rs %>%
+  extract_workflow_set_result("downsampling_glmnet")
+
+autoplot(downsample_rs)
+```
+
+Let's choose the simplest model that performs about as well as the best one (within one standard error). But which metric should we use to choose? If we use sensitivity, we'll choose the model where `specificity = 0`! Instead, let's use one of the metrics that measures the performance of the model overall (both classes).
+
+```{r}
+best_penalty <- 
+  downsample_rs %>%
+  select_by_one_std_err(-penalty, metric = "mn_log_loss")
+
+best_penalty
+```
+
+Now let's finalize the original tuneable workflow with this value for the penalty, and then **fit** one time to the training data and **evaluate** one time on the testing data.
+
+```{r}
+final_fit <-  
+  wf_set %>% 
+  extract_workflow("downsampling_glmnet") %>%
+  finalize_workflow(best_penalty) %>%
+  last_fit(feeder_split)
+
+final_fit
+```
+
+How did this final model do, evaluated using the testing set?
+
+```{r}
+collect_metrics(final_fit)
+```
+
+Not great! But this is the best we can do with this model when identifying both positive and negative classes. We can see the model's performance across the classes using a confusion matrix:
+
+```{r}
+collect_predictions(final_fit) %>%
+  conf_mat(squirrels, .pred_class)
+```
+
+It's still slightly easier to identify the majority class (SQUIRRELS!) but this confusion matrix would look way different if we hadn't downsampled, with almost all the observations predicted to be in the majority class.
+
+Which predictors are driving this classification model?
+
+```{r}
+library(vip)
+feeder_vip <-
+  extract_fit_engine(final_fit) %>%
+  vi()
+
+feeder_vip
+```
+
+Let's visualize these results:
+
+```{r}
+#| fig-height: 4
+#| fig-width: 8
+feeder_vip %>%
+  group_by(Sign) %>%
+  slice_max(Importance, n = 15) %>%
+  ungroup() %>%
+  ggplot(aes(Importance, fct_reorder(Variable, Importance), fill = Sign)) + 
+  geom_col() +
+  facet_wrap(vars(Sign), scales = "free_y") +
+  labs(y = NULL) +
+  theme(legend.position = "none")
+```
+
+Looks like a real squirrel hater should put their bird feeder on some pavement in the desert, certainly away from woods or other nearby feeders!
