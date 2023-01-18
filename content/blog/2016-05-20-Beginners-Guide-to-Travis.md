@@ -9,8 +9,6 @@ categories: [rstats]
 
 Have you seen all those attractive green badges on other people's R packages and thought, "*I* want a lovely green badge!"
 
-{{< tweet 716034756509507584 >}}
-
 OF COURSE YOU DO. Well, let's give it a shot, because today I am going to attempt a beginner's guide to using Travis-CI for continuous integration for R packages. It is going to be a *beginner's* guide because that is all I could possibly write; my knowledge and experience with Travis is limited. Sometimes it can be helpful to have someone walk you through something new that she herself has only recently come to grips with, though, so here we go!
 
 ## What Is This? And Why? And Who Is Travis?!
@@ -32,9 +30,7 @@ Now, we need to tell Travis what to do by adding a `.travis.yml` file to the R p
 
 This isn't R code or anything; it is telling Travis how to go about building the package. (And FYI, this file needs to be added to `.Rbuildignore` because it is not part of the R package from the point of view of R.) You can use `devtools::use_travis()` to automatically add a minimal `.travis.yml` to your package, add `.travis.yml` to `.Rbuildignore`, and add the code for the badge to your README. This kind of simple `.travis.yml` is what I have for my [janeaustenr package](https://github.com/juliasilge/janeaustenr/blob/2008066a02558ec36bddd9f3deb7d81469684a48/.travis.yml). Once you have made this file and then push it to GitHub, the push triggers Travis to build and check the package. Every commit you push to GitHub after this will trigger a new build on Travis that will go through all the automated checking and testing.
 
-If you are lucky, your package will build on Travis successfully and you can add your beautiful green badge to your README on GitHub, if you haven't already added it via `devtools::use_travis()` or copy/pasting from elsewhere. If you are less than lucky, well...
-
-{{< tweet 722514130968535042 >}}
+If you are lucky, your package will build on Travis successfully and you can add your beautiful green badge to your README on GitHub, if you haven't already added it via `devtools::use_travis()` or copy/pasting from elsewhere. If you are less than lucky, well... 😩
 
 If a build on Travis is erroring or failing (which are different), I tend to think of the problems being of two possible types: 
 

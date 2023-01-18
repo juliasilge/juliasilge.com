@@ -215,14 +215,6 @@ ggplot(data = latenighttweets, aes(x = timestamp)) +
 
 What are these tweets? I am *never* awake in the middle of the night!
 
-{{< tweet 175899182127783936 >}}
-
-Oh...
-
-{{< tweet 338576358059950080 >}}
-
-Hmmmm...
-
 So it turns out that I have occasionally been up in the middle of the night. Not all these overnight tweets were related to small children and illness. Some were from times when I was traveling west to the Pacific Time Zone and were not actually as late as they appeared because of the way I assigned the time zone. And some were just from when I stayed up a bit late, of course! The tweets that came in peaks that you can see in the histogram were more likely to be episodes of sick little ones. I am so glad that my kids are older now and we are mostly past this stage of parenthood! You can see how the number of late night tweets (never large to start with) has decreased over the years I have been on Twitter.
 
 ## HASHTAG RETWEET ME, BRO
@@ -356,13 +348,6 @@ This means that my histogram above is biased high a little bit; the number of ch
 
 The tweets with really low numbers of characters made me a bit suspicious too, but it turns out they are all real and normal tweets. Many were just very short replies to other people, but sometimes it turns out you don't need many characters to say what you want to say.
 
-{{< tweet 1001102261 >}}
-
-So true.
-
-{{< tweet 528385670197567488 >}}
-
-Amen.
 
 ## The End
 

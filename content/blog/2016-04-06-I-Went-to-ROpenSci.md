@@ -26,5 +26,3 @@ Sean Kross put together all the projects that participants worked on during this
 To sum up, it was an amazing experience, I learned so much, and I was so pleased to meet and collaborate with such accomplished, generous people. If you ever get the chance to participate, I say jump at the opportunity. I hear that ROpenSci organized an [unconference in Australia](http://auunconf.ropensci.org/) this year for the first time, for those people for whom the Bay Area is not so accessible.
 
 And I *did* get those hex stickers; my laptop looks much cooler now.
-
-{{< tweet 716725817154211840 >}}
