@@ -161,13 +161,13 @@ An XGBoost model is based on trees, so we don't need to do much preprocessing fo
 
 ```r
 xgb_spec <- boost_tree(
-  trees = 1000, 
-  tree_depth = tune(), min_n = tune(), 
+  trees = 1000,
+  tree_depth = tune(), min_n = tune(),
   loss_reduction = tune(),                     ## first three: model complexity
   sample_size = tune(), mtry = tune(),         ## randomness
-  learn_rate = tune(),                         ## step size
-) %>% 
-  set_engine("xgboost") %>% 
+  learn_rate = tune()                          ## step size
+) %>%
+  set_engine("xgboost") %>%
   set_mode("classification")
 
 xgb_spec
@@ -175,7 +175,7 @@ xgb_spec
 
 ```
 ## Boosted Tree Model Specification (classification)
-## 
+##
 ## Main Arguments:
 ##   mtry = tune()
 ##   trees = 1000
@@ -184,7 +184,7 @@ xgb_spec
 ##   learn_rate = tune()
 ##   loss_reduction = tune()
 ##   sample_size = tune()
-## 
+##
 ## Computational engine: xgboost
 ```
 

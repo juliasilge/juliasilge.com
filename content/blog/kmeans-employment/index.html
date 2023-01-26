@@ -110,7 +110,7 @@ tidy(employment_clust)</code></pre>
   tibble(k = 1:9) %&gt;%
   mutate(
     kclust = map(k, ~ kmeans(select(employment_demo, -occupation), .x)),
-    glanced = map(kclust, glance),
+    glanced = map(kclust, glance)
   )
 
 kclusts %&gt;%

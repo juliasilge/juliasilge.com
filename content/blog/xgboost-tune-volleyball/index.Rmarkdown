@@ -135,7 +135,7 @@ xgb_spec <- boost_tree(
   tree_depth = tune(), min_n = tune(), 
   loss_reduction = tune(),                     ## first three: model complexity
   sample_size = tune(), mtry = tune(),         ## randomness
-  learn_rate = tune(),                         ## step size
+  learn_rate = tune()                          ## step size
 ) %>% 
   set_engine("xgboost") %>% 
   set_mode("classification")

@@ -119,7 +119,7 @@ kclusts <-
   tibble(k = 1:9) %>%
   mutate(
     kclust = map(k, ~kmeans(select(employment_demo, -occupation), .x)),
-    glanced = map(kclust, glance),
+    glanced = map(kclust, glance)
   )
 
 kclusts %>%
