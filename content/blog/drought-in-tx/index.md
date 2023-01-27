@@ -74,8 +74,7 @@ tx_median_rent <-
     state = "TX",
     variables = "B19013_001",
     year = 2020,
-    geometry = TRUE,
-    
+    geometry = TRUE
   )
 
 tx_median_rent
