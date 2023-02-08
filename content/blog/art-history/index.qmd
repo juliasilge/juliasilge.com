@@ -1,0 +1,189 @@
+---
+title: "Resampling to understand gender in #TidyTuesday art history data"
+author: Julia Silge
+date: '2023-02-08'
+format: hugo
+slug: art-history
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "Artists who are women are underrepresented in art history textbooks, and we can use resampling to robustly understand more about this imbalance."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This screencast focuses on how to use resampling for an [inferential](https://www.tmwr.org/software-modeling.html#inferential-models) type of question, with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on art history textbooks. This dataset was created by Holland Stam for her [excellent undergraduate thesis](https://doi.org/10.7924/r4dn48h0w). 🖼️
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "Ac7V848uBuo")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Art history textbooks have a lot of, well, art in them, and [this dataset](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-01-17/readme.md) contains information on how much physical space each artwork is given across many editions of some of the most important art history textbooks. Artists who are women have been historically underrepresented, both where art is displayed and where it is studied like textbooks, and this dataset lets us understand more about in what ways this is true. Let's start by reading in the data for one specific textbook, Gardner's _Art Through the Ages_:
+
+```{r}
+library(tidyverse)
+library(arthistory)
+data(worksgardner)
+glimpse(worksgardner)
+```
+
+There is another art history textbook in this dataset as well, but let's focus on just this one.
+
+How is gender recorded?
+
+```{r}
+worksgardner %>%
+  count(artist_gender)
+```
+
+There are about 10 times as many men as women, with a few artists whose gender was not identified. How did the number of works change across editions of this textbook?
+
+```{r}
+worksgardner %>%
+  count(publication_year, artist_gender) %>%
+  ggplot(aes(publication_year, n, fill = artist_gender)) +
+  geom_col() +
+  labs(x = NULL, y = "Number of works", fill = NULL)
+```
+
+This textbook went through some drastic changes in how many works are included! How did the proportion by gender change?
+
+```{r}
+worksgardner %>%
+  count(publication_year, artist_gender) %>%
+  group_by(publication_year) %>%
+  mutate(proportion = n / sum(n)) %>%
+  ggplot(aes(publication_year, proportion, fill = artist_gender)) +
+  geom_col(alpha = 0.8) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = NULL, y = "% of works", fill = NULL)
+```
+
+There were literally no confirmed women at all in the first edition and then there has been a move to include more women in later editions, but the proportion is maxing out at about 15% of the works included. (This plot is almost exactly the same as one in Holland Stam's thesis.)
+
+What about the area on the page allotted to each work? Is this different across gender?
+
+```{r}
+#| fig-width: 5
+#| fig-height: 6
+worksgardner %>%
+  ggplot(aes(x = area_of_work_in_book, fill = artist_gender)) +
+  geom_histogram(bins = 15) +
+  facet_wrap(vars(artist_gender), scales = "free_y", ncol = 1) +
+  scale_x_log10() +
+  labs(fill = NULL)
+```
+
+There is more mass below the most common value for women compared to men, so women are allotted less area per artwork. Is this changing over time?
+
+```{r}
+#| fig-width: 7
+#| fig-height: 7
+worksgardner %>%
+  mutate(publication_year = 10 * (publication_year %/% 10),
+         publication_year = factor(publication_year)) %>%
+  ggplot(aes(publication_year, area_of_work_in_book, fill = artist_gender)) +
+  geom_boxplot(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(vars(artist_gender), ncol = 1) +
+  scale_y_log10() +
+  labs(x = NULL)
+```
+
+It looks to me like the artworks got bigger on the page as time went on, although this has mostly flattened out now. Given how many more artworks are included in the later editions, the number of pages must have grown enormously!
+
+## Resampling to understand relationships
+
+Let's use resampling to understand how much evidence there is for change with time and/or gender. We can start by subsetting the data down to only those works identified as created by a man or woman and only those which were included with some area (i.e. shown on a page).
+
+```{r}
+works_subset <-
+  worksgardner %>%
+  filter(artist_gender %in% c("Male", "Female"),
+         area_of_work_in_book > 0) %>%
+  mutate(area_of_work_in_book = log10(area_of_work_in_book))
+```
+
+If I wanted to fit a linear model one time, I could do this:
+
+```{r}
+single_model <- lm(area_of_work_in_book ~ artist_gender + publication_year, 
+                   data = works_subset)
+summary(single_model)
+```
+
+This says that with a single linear model, we see evidence that men are allotted larger areas and the area per work is increasing with time. (It's modeling a linear relationship, which is probably not 100% right; we could try options like a low-rank spline for the relationship between area and year if we wanted to check that out.) 
+
+Often with questions like this, I prefer to use resampling instead of fitting a model one single time, so I can get a better understanding of what's going with the relationships. We can start by creating a set of bootstrap resamples:
+
+```{r}
+library(tidymodels)
+set.seed(123)
+folds <- bootstraps(works_subset, times = 1e3)
+folds
+```
+
+Now we can iterate through the resamples, fitting the same linear model to each resample. Let's also `tidy()` the models to get the coefficients.
+
+```{r}
+linear_coefs <-
+  folds %>%
+  mutate(
+    model = map(
+      splits, 
+      ~ lm(area_of_work_in_book ~ artist_gender + publication_year, 
+           data = analysis(.x))
+    ),
+    coef_info = map(model, tidy))
+
+linear_coefs
+```
+
+How did this turn out?
+
+```{r}
+linear_coefs %>%
+  unnest(coef_info)
+```
+
+The effect of gender is on the order of 10 times as large as the effect of a single year; you could say that an artwork gets as much of a bump in area from being created by a man as an additional decade or so of new editions. What I really find helpful about using resampling is to make visualizations like this:
+
+```{r}
+#| fig-width: 7
+#| fig-height: 3.5
+linear_coefs %>% 
+  slice_sample(n = 200) %>% 
+  mutate(augmented = map(model, augment)) %>% 
+  unnest(augmented) %>%
+  ggplot(aes(publication_year, .fitted, color = artist_gender, group = id)) +
+  geom_line(alpha = 0.1, show.legend = FALSE) +
+  facet_wrap(vars(artist_gender))
+```
+
+What I like about this is that we can see how there is much more uncertainty in the relationship for women than for men, and also in early years compared to later years. This makes sense given where we have more data in the gender-year space, but it really helps me to see it visually.
