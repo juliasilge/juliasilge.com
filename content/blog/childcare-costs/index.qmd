@@ -1,0 +1,209 @@
+---
+title: "Tune an xgboost model with early stopping and #TidyTuesday childcare costs"
+author: Julia Silge
+date: '2023-05-11'
+format: hugo
+slug: childcare-costs
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "Can we predict childcare costs in the US using an xgboost model? In this blog post, learn how to use early stopping for hyperparameter tuning."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+library(wikipediapreview)
+wp_init()
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This screencast focuses on how to use tidymodels to tune an xgboost model with early stopping, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on childcare costs in the United States. 👩‍👧‍👦
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "OMn1WCNufo8")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Mothers Day is coming up this weekend, and our modeling goal in this case is to predict the [cost of childcare](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-05-09/) in US counties based on other characteristics of each county, like the poverty rate and labor force participation. Let's start by reading in the data:
+
+```{r}
+library(tidyverse)
+
+childcare_costs <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-05-09/childcare_costs.csv')
+
+glimpse(childcare_costs)
+```
+
+There are a lot of variables to possibly use as predictors in this dataset. In situations like this where there are lots of variables in a big rectangular dataset, many of which are highly correlated with each other, I will often turn to xgboost as a modeling algorithm. It often works great!
+
+Before we get started with the modeling, let's do a bit of exploratory data analysis. How have childcare costs as measured by `mcsa` (median weekly price for school-aged kids in childcare centers) changed over time?
+
+```{r}
+childcare_costs |> 
+  ggplot(aes(study_year, mcsa, group = study_year, fill = study_year)) +
+  geom_boxplot(alpha = 0.8, show.legend = FALSE) +
+  scale_fill_distiller(palette = "RdPu")
+```
+
+How are childcare costs related to `mhi_2018` (median household income) and `flfpr_20to64` (labor force participation for women)?
+
+```{r}
+childcare_costs |> 
+  ggplot(aes(mhi_2018, mcsa, color = flfpr_20to64)) +
+  geom_point(alpha = 0.5) +
+  scale_x_log10() +
+  scale_color_viridis_c()
+```
+
+It looks like childcare costs are mostly flat for low income counties but increase for high income counties, and labor force participation for women is higher in high income counties.
+
+What about the racial makeup of counties?
+
+```{r}
+#| fig-width: 9
+#| fig-height: 7
+childcare_costs |>
+  select(mcsa, starts_with("one_race"), mhi_2018) |> 
+  select(-one_race) |> 
+  pivot_longer(starts_with("one_race")) |> 
+  ggplot(aes(value, mcsa, color = mhi_2018)) +
+  geom_point(alpha = 0.5) +
+  facet_wrap(vars(name), scales = "free_x") +
+  scale_color_viridis_c() +
+  labs(x = "% of population")
+```
+
+There's a lot going on in this one! When a county has more Black population (`one_race_b`), household income is lower and childcare costs are lower; the opposite is true for the white population (`one_race_w`). There looks to be a trend for the Asian population (`one_race_a`) where a higher Asian population comes with higher childcare costs. None of these relationships are causal, of course, but related to complex relationships between race, class, and where people live in the US.
+
+## Build a model
+
+Let's start our modeling by setting up our "data budget." For this example, let's predict `mcsa` (costs for school-age kids in childcare centers) and remove the other measures of childcare costs for babies or toddlers, family-based childcare, etc. Let's remove the FIPS codes which literally encode location and instead focus on the characteristics of counties like household income, number of households with children, and similar. Since this dataset is quite big, let's use a single [validation set](https://www.tmwr.org/resampling.html#validation).
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+childcare_split <- childcare_costs |> 
+  select(-matches("^mc_|^mfc")) |> 
+  select(-county_fips_code) |> 
+  na.omit() |> 
+  initial_split(strata = mcsa)
+
+childcare_train <- training(childcare_split)
+childcare_test <- testing(childcare_split)
+
+set.seed(234)
+childcare_set <- validation_split(childcare_train)
+childcare_set
+```
+
+All these predictors are already numeric so we don't need any special feature engineering; we can just use a formula like `mcsa ~ .`. We do need to set up a tunable xgboost model specification with [early stopping](https://en.wikipedia.org/wiki/Early_stopping), like we planned. We will keep the number of trees as a constant (and not too terribly high), set `stop_iter` (the early stopping parameter) to `tune()`, and then tune a few other parameters. Notice that we need to set a validation set (which in this case is a proportion of the *training* set) to hold back to use for deciding when to stop.
+
+```{r}
+xgb_spec <-
+  boost_tree(
+    trees = 500,
+    min_n = tune(),
+    mtry = tune(),
+    stop_iter = tune(),
+    learn_rate = 0.01
+  ) |>
+  set_engine("xgboost", validation = 0.2) |>
+  set_mode("regression")
+
+xgb_wf <- workflow(mcsa ~ ., xgb_spec)
+xgb_wf
+```
+
+Our model is read to go! Let's tune across possible hyperparameter configurations using our training set (with a subset that is held back for early stopping) plus our validation set.
+
+```{r}
+doParallel::registerDoParallel()
+set.seed(234)
+xgb_rs <- tune_grid(xgb_wf, childcare_set, grid = 15)
+xgb_rs
+```
+
+All done!
+
+## Evaluate results
+
+How did these results turn out? We can visualize them.
+
+```{r}
+#| fig-width: 8.5
+#| fig-height: 5.5
+autoplot(xgb_rs)
+```
+
+Maybe we could consider going back to tune again with lower `min_n` and/or higher `mtry` to achieve better performance.
+
+We can look at the top results we got like this:
+
+```{r}
+show_best(xgb_rs, "rmse")
+```
+
+The best RMSE is a little more than \$20, which is an estimate of how precisely we can predict the median childcare cost in a US county (remember that the median in this dataset was about \$100).
+
+Let's use `last_fit()` to fit one final time to the training data and evaluate one final time on the testing data, with the numerically optimal result from `xgb_rs`.
+
+```{r}
+childcare_fit <- xgb_wf |>
+  finalize_workflow(select_best(xgb_rs, "rmse")) |>
+  last_fit(childcare_split)
+
+childcare_fit
+```
+
+How did this model perform on the testing data, that was not used in tuning or training?
+
+```{r}
+collect_metrics(childcare_fit)
+```
+
+What features are most important for this xgboost model?
+
+```{r}
+library(vip)
+
+extract_workflow(childcare_fit) |>
+  extract_fit_parsnip() |>
+  vip(num_features = 15, geom = "point")
+```
+
+The proportion of county population that is Asian has a *big* impact in this model, as does median household income, median earnings for women, year, and number of households in the county.
+
+## BONUS: create a deployable model object!
+
+If you wanted to deploy this model, the next step is to create a deployable model object with [vetiver](https://vetiver.rstudio.com/):
+
+```{r}
+library(vetiver)
+v <- extract_workflow(childcare_fit) |> 
+  vetiver_model("childcare-costs-xgb")
+v
+```
+
+At [posit::conf()](https://pos.it/conf) this coming September in Chicago, I am teaching a workshop on how to deploy and maintain models with vetiver. Registration is [open now](https://pos.it/conf) if you are interested in learning more about this part of the modeling process, but you should also [check out all the other workshops](https://www.youtube.com/playlist?list=PL9HYL-VRX0oROlETlHRDAt0FzqnfkoG84) being organized!
