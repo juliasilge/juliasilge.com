@@ -1,0 +1,156 @@
+---
+title: "What tokens are used more vs. less in #TidyTuesday place names?"
+author: Julia Silge
+date: '2023-07-05'
+format: hugo
+slug: place-names
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "Let's use byte pair encoding tokenization along with Poisson regression to understand which tokens are more more often (or less often) in US place names."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This screencast focuses on how to use tidymodels to learn a subword tokenization strategy, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on place names in the United States. 🏞️
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "BQ3X59pBigo")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+Our modeling goal in this case is to predict the number of uses of [geographical place names in the United States](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-06-27/readme.md), to find out which kinds of names are more and less common. Let's start by reading in the data:
+
+```{r}
+library(tidyverse)
+
+us_place_names <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-06-27/us_place_names.csv')
+
+glimpse(us_place_names)
+```
+
+How many times is each place name used? Let's restrict our analysis to place names used more than one time.
+
+```{r}
+place_counts <- 
+  us_place_names |> 
+  count(feature_name, sort = TRUE) |> 
+  filter(n > 1)
+
+place_counts
+```
+
+So many Midways and Fairviews! As is common with text data, we see something [like Zipf's law](https://en.wikipedia.org/wiki/Zipf%27s_law):
+
+```{r}
+place_counts |> 
+  ggplot(aes(n)) +
+  geom_histogram(bins = 12) +
+  scale_x_log10()
+```
+
+## Build a model
+
+We can start by loading the tidymodels metapackage and splitting our data into training and testing sets. We don't have much resampling to do in this analysis (and might not even really use the test set for much) but still think about this stage as _spending your data budget_.
+
+```{r}
+library(tidymodels)
+
+set.seed(123)
+place_split <- initial_split(place_counts, strata = n)
+place_train <- training(place_split)
+place_test <- testing(place_split)
+```
+
+Next, let's create our feature engineering recipe. Let's tokenize using [byte pair encoding](https://en.wikipedia.org/wiki/Byte_pair_encoding); this is an algorithm that iteratively merges frequently occurring subword pairs and gets us information in between the character level and the word level. You can read more about byte pair encoding in [this section of _Supervised Machine Learning for Text Analysis in R_](https://smltar.com/dlcnn.html#case-study-byte-pair-encoding). Byte pair encoding is used in LLMs like GPT models and friends, and it is great to understand how it works. 
+
+It would probably be a good idea to **tune** the vocabulary size using our text data to find the optimal value, but let's just stick with a small-to-medium vocabulary for this dataset of place
+
+```{r}
+library(textrecipes)
+
+place_rec <- recipe(n ~ feature_name, data = place_train) |> 
+  step_tokenize_bpe(feature_name, vocabulary_size = 200) |>
+  step_tokenfilter(feature_name, max_tokens = 100) |>
+  step_tf(feature_name)
+
+place_rec
+```
+
+There are a number of [specialized packages](https://www.tidymodels.org/packages/#specialized-packages), outside the core tidymodels packages, for less general, more specialized data analysis and modeling tasks. One of these is [poissonreg](https://poissonreg.tidymodels.org/), for Poisson regression models such as those we can use with this count data. The counts here are the number of times each place name is used. Since we aren't tuning anything, we can just go ahead and fit our model to our training data.
+
+```{r}
+library(poissonreg)
+poisson_wf <- workflow(place_rec, poisson_reg())
+poisson_fit <- fit(poisson_wf, place_train)
+```
+
+## Understand our model results
+
+We can `tidy()` our fitted model to get out the coefficients. What are the top 20 subwords that drive the number of uses in US place names either up or down?
+
+```{r}
+tidy(poisson_fit) |> 
+  filter(term != "(Intercept)") |> 
+  mutate(term = str_remove_all(term, "tf_feature_name_")) |> 
+  slice_max(abs(estimate), n = 20) |> 
+  arrange(-estimate)
+```
+
+Looks like there are lots of place names that include "wood", and subwords like "historical", "Estates", and "Heights" are less common. What are some of these names like?
+
+```{r}
+place_train |> 
+  filter(str_detect(feature_name, "Estates|wood"))
+```
+
+Let's make a visualization.
+
+```{r}
+place_train |> 
+  filter(str_detect(feature_name, "Estates|wood")) |> 
+  mutate(feature_name = case_when(
+    str_detect(feature_name, "wood") ~ "wood",
+    str_detect(feature_name, "Estates") ~ "estate"
+  )) |> 
+  ggplot(aes(n, fill = feature_name)) +
+  geom_histogram(alpha = 0.8, position = "dodge", bins = 12) +
+  scale_x_log10() +
+  labs(x = "Number of place name uses",
+       y = "Count",
+       fill = NULL)
+```
+
+In this dataset of place names in the US, woods are _more_ numerous, while estates are _less_ numerous. 
+
+We didn't train this model with an eye to predictive performance, but it's often still a good idea to estimate how well a model fits the data using an appropriate model metric. Since we are predicting _counts_, we can use a metric appropriate for count data [like `poisson_log_loss()`](https://yardstick.tidymodels.org/reference/poisson_log_loss.html), and as always, we do not estimate performance using the same data we trained with, but rather the test data:
+
+```{r}
+augment(poisson_fit, place_test) |> 
+  poisson_log_loss(n, .pred)
+```
+
+If we wanted to tune the `vocabulary_size` for the byte pair encoding tokenization, we would use a metric appropriate for this problem like `poisson_log_loss()`. For more on using Poisson regression, check out [Chapter 21 of *Tidy Modeling with R*](https://www.tmwr.org/inferential.html).
