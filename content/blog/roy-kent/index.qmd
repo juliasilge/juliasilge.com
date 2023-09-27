@@ -1,0 +1,113 @@
+---
+title: 'How often does Roy Kent say "F*CK"?'
+author: Julia Silge
+date: '2023-09-27'
+format: hugo
+slug: roy-kent
+categories:
+  - rstats
+  - tidymodels
+tags:
+  - rstats
+  - tidymodels
+summary: "He's here, he's there, he's every f*cking where, and we're finding bootstrap confidence intervals."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This screencast focuses on how to compute bootstrap confidence intervals, using this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Roy Kent's colorful language. 🤬
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "xofeRPYjGkQ")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video.
+
+## Explore data
+
+It's hard not to love the show *Ted Lasso* or one of its most compelling characters, Roy Kent, and our modeling goal here is to estimate how his use of what appears to be his favorite word [depends on his coaching status and/or his dating status](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-09-26/readme.md). This dataset was created by Deepsha Menghani for [her excellent talk at posit::conf(2023)](https://deepshamenghani.github.io/posit_plotly_crosstalk/), and you should definitely keep an eye out for the video when it becomes available later this year. Let's start by reading in the data:
+
+```{r}
+library(tidyverse)
+library(richmondway)
+data(richmondway)
+glimpse(richmondway)
+```
+
+This is not what you call a _large_ dataset but we can check out the distribution of how often Roy Kent says "f*ck" per episode. Can we compare when he is dating Keeley vs. not?
+
+```{r}
+richmondway |> 
+    ggplot(aes(F_count_RK, fill = Dating_flag)) +
+    geom_histogram(position = "identity", bins = 7, alpha = 0.7) +
+    scale_fill_brewer(palette = "Dark2")
+```
+
+Or what about when he coaching vs. not?
+
+```{r}
+richmondway |> 
+    ggplot(aes(F_count_RK, fill = Coaching_flag)) +
+    geom_histogram(position = "identity", bins = 7, alpha = 0.7) +
+    scale_fill_brewer(palette = "Dark2")
+```
+
+It looks like maybe there are differences here but it's a small dataset, so let's use statistical modeling to help us be more sure what we are seeing.
+
+## Bootstrap confidence intervals for Poisson regression
+
+There isn't much code in what we're about to do, but let's outline two important pieces of what is going on:
+
+- These are **counts** of Roy Kent's F-bombs per episode, so we want to use a model that is a good fit for count data, i.e. Poisson regression.
+- We could fit a Poisson regression model one time to this dataset, but it's such a tiny dataset that we might not have much confidence in the results. Instead, we want to use **bootstrap resamples** to fit our model a whole bunch of times to get confidence intervals, and then use these replicate results to estimate the impact of coaching and dating.
+
+We can use the `reg_intervals()` function from [rsample](https://rsample.tidymodels.org/) to do this all at once. If we use `keep_reps = TRUE`, we will get each individual model result in our results:
+
+```{r}
+library(rsample)
+
+set.seed(123)
+poisson_intervals <- 
+    reg_intervals(
+        F_count_RK ~ Dating_flag + Coaching_flag, 
+        data = richmondway, 
+        model_fn = "glm", 
+        family = "poisson",
+        keep_reps = TRUE
+    )
+
+poisson_intervals
+```
+
+Notice the `.replicates` column where we have each of the 1000 results from our 1000 bootstrap resamples. We can `unnest()` this column and make a visualization:
+
+```{r}
+#| fig-width: 8
+poisson_intervals |>
+    mutate(term = str_remove(term, "_flagYes")) |> 
+    unnest(.replicates) |>
+    ggplot(aes(estimate, fill = term)) +
+    geom_vline(xintercept = 0, linewidth = 1.5, lty = 2, color = "gray50") +
+    geom_histogram(alpha = 0.8, show.legend = FALSE) +
+    facet_wrap(vars(term)) +
+    scale_fill_brewer(palette = "Accent")
+```
+
+Looks like we have strong evidence that Roy Kent says "F*CK" more per episode when he is coaching, but no real evidence that he does so more or less when dating Keeley.
