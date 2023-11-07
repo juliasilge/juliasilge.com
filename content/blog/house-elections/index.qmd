@@ -1,0 +1,159 @@
+---
+title: 'Logistic regression modeling for #TidyTuesday US House Elections'
+author: Julia Silge
+date: '2023-11-07'
+format: hugo
+slug: house-elections
+categories:
+  - rstats
+tags:
+  - rstats
+summary: "Today is Election Day in the United States, so let's use logistic regression modeling to explore vote share in US House elections."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! Today is Election Day in the United States, and this screencast focuses on logistic regression modeling with this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on US House Election Results. 🇺🇸
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "C143WxnBLFo")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video. FYI, I recently started [using GitHub Copilot in RStudio](https://docs.posit.co/ide/user/ide/guide/tools/copilot.html) and you can see it in action in the video.
+
+## Explore data
+
+This screencast doesn't use tidymodels, but just plain old `glm()`. In this case, I don't have any preprocessing or resampling needs and the [particular way I want to use `glm()`](https://github.com/tidymodels/parsnip/issues/266) isn't supported yet in tidymodels. Our modeling goal is to understand vote share in the [US House election results](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-11-07/readme.md). Let's start by reading in the data:
+
+```{r}
+library(tidyverse)
+house <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-11-07/house.csv')
+glimpse(house)
+```
+
+How many different political parties are represented in these elections?
+
+```{r}
+house |> 
+    count(party, sort = TRUE)
+```
+
+A ton, but we probably want to focus on the two main political parties in the US. How does vote share in a given election look for the two parties?
+
+```{r}
+house |> 
+    filter(party %in% c("DEMOCRAT", "REPUBLICAN")) |>
+    ggplot(aes(candidatevotes / totalvotes, fill = party)) +
+    geom_histogram(position = "identity", bins = 40, alpha = 0.7) +
+    scale_x_continuous(labels = scales::percent_format()) +
+    labs(x = "% of total votes", y = "Number of elections", fill = NULL)
+```
+
+For the time period as a whole, vote share for Democrats is shifted to higher values than for Republicans at the tails (less close elections) while the opposite is true nearer the middle (more close elections). That's quite an interesting distribution, if you ask me. 
+
+Has vote share changed over time?
+
+```{r}
+house |> 
+    filter(party %in% c("DEMOCRAT", "REPUBLICAN")) |>
+    ggplot(aes(year, candidatevotes / totalvotes, fill = factor(year))) +
+    geom_boxplot(alpha = 0.8, show.legend = FALSE) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    scale_fill_viridis_d() +
+    labs(x = NULL, y = "% of total votes", fill = NULL)
+```
+
+It looks to me like vote share may be decreasing overall over time, indicating closer elections. However, I'd like to use modeling to understand this better. I'm especially interested in whether the relationship is different for Democrats and Republicans.
+
+## Logistic regression model
+
+Let's only use the election results for Democrat and Republication candidates in our model:
+
+```{r}
+house_subset <-
+    house |> 
+    filter(party %in% c("DEMOCRAT", "REPUBLICAN"))
+```
+
+Remember that we have `candidatevotes` and `totalvotes` for each candidate. You're probably familiar with using `glm()` for logistic regression for a binary outcome (like "won" and "lost") but you can also use it with `cbind()` syntax for the outcome to model a matrix of successes and failures. I have found this really useful in many real world situations where you are dealing with a _proportion_, as with this vote share data. You can look at the docs for `glm()` to learn more, but what we want is a two-column matrix with columns for the numbers of "successes" (candidate votes in this example) and "failures" (votes for people other than this candidate).
+
+```{r}
+house_mod <-
+    glm(cbind(candidatevotes, totalvotes - candidatevotes + 1) ~ 
+            party + year + state_po, 
+        data = house_subset, family = binomial())
+```
+
+I added the `+ 1` here as an easy way to handle the elections where a candidate won all votes. This model can't handle zeroes for "failures" but I don't want to drop those elections from the model. 
+
+```{r}
+summary(house_mod)
+```
+
+We can use `tidy()` from the broom package to get the model coefficients into a tidy data frame.
+
+```{r}
+library(broom)
+tidy(house_mod)
+```
+
+That's great and all, but I'll be honest that those model coefficients on the logistic scale aren't always super easy to interpret for me. What I often will do is make up some new data spanning the variables of interest, use `augment()` from the broom package to get the predictions from the model for this new data, and then make a visualization.
+
+```{r}
+new_data <-
+    crossing(party = c("DEMOCRAT", "REPUBLICAN"),
+             state_po = unique(house_subset$state_po),
+             year = 1975:2022)
+
+augment(house_mod, newdata = new_data, type.predict = "response") |>
+    mutate(group = paste(party, state_po, sep = "_")) |>
+    ggplot(aes(year, .fitted, group = group, color = party)) +
+    geom_hline(yintercept = 0.5, linetype = "dashed", alpha = 0.5, size = 2, color = "gray50") +
+    geom_line(alpha = 0.4, size = 1.4, show.legend = FALSE) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    facet_wrap(vars(party)) +
+    labs(x = NULL, y = "% of total votes", color = NULL)
+
+```
+
+This was a linear model on the logistic scale, and notice how clearly we see that here. The slopes are the same for Democrats and Republicans, but the intercepts are different. Democrats have a higher vote share overall, but the vote share for both parties is going down over time.
+
+## What about interactions?
+
+The assumptions we made when set up the predictors like `party + year + state_po` are probably not very good. I think it's unlikely the relationship between year and vote share are the same for Democrats and Republicans. We can add an interaction term to the model to allow for this, and then make the same plot using `augment()`. I find this approach of `augment()` plus visualization to be especially helpful with interactions and other more complex models. I don't know about you, but I can't look at a table of model coefficients with interaction terms and understand what they mean directly. A visualization can be quite clear, by contrast:
+
+```{r}
+house_interact <-
+    glm(cbind(candidatevotes, totalvotes - candidatevotes + 1) ~ 
+            party * year + state_po, 
+        data = house_subset, family = binomial())
+
+augment(house_interact, newdata = new_data, type.predict = "response") |>
+    mutate(group = paste(party, state_po, sep = "_")) |>
+    ggplot(aes(year, .fitted, group = group, color = party)) +
+    geom_hline(yintercept = 0.5, linetype = "dashed", alpha = 0.5, size = 2, color = "gray50") +
+    geom_line(alpha = 0.4, size = 1.4, show.legend = FALSE) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    facet_wrap(vars(party)) +
+    labs(x = NULL, y = "% of total votes", color = NULL)
+```
+
+Notice that the slopes are now different for Democrats and Republicans; that's what the interaction in the model does. The vote share for Democrats in US House Elections is decreasing over time, while the vote share for Republicans is increasing (although not as fast). There are a lot of complex circumstances that go into the "real" reasons for why we see this change, including how the boundaries of US House Districts have changed over this time period. We could try a three-way interaction with `party * year * state_po` but in my experience, three-way interactions are often not very practically useful. Take a look at the video if you want to see the spaghetti plot that results from that model! 😆
+
