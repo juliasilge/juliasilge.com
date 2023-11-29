@@ -1,0 +1,128 @@
+---
+title: 'Empirical Bayes for #TidyTuesday Doctor Who episodes'
+author: Julia Silge
+date: '2023-11-29'
+format: hugo
+slug: doctor-who-bayes
+categories:
+  - rstats
+tags:
+  - rstats
+summary: "Which writers of Doctor Who episodes are rated the most highly? Let's use empirical Bayes to find out."
+---
+
+```{r setup}
+#| include: false
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 7, fig.height = 5)
+library(tidyverse)
+library(silgelib)
+theme_set(theme_light_plex())
+update_geom_defaults("rect", list(fill = "midnightblue", alpha = 0.8))
+update_geom_defaults("line", list(color = "midnightblue", alpha = 0.8))
+update_geom_defaults("point", list(color = "midnightblue", alpha = 0.8))
+
+## if you don't have fancy fonts like IBM Plex installed, run
+## theme_set(theme_minimal())
+```
+
+This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! I love Doctor Who and cannot pass up the opportunity to dig in to this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on Doctor Who episodes. I wrote about [using tidymodels for Doctor Who viewership in 2021](https://juliasilge.com/blog/doctor-who/) and I'm excited to revisit this topic, focusing this time on the _writers_ of Doctor Who episodes. 💙
+
+```{r}
+#| echo: false
+blogdown::shortcode("youtube", "OtDpYeiwbj8")
+```
+
+</br>
+
+Here is the code I used in the video, for those who prefer reading instead of or in addition to video. FYI, I recently started [using GitHub Copilot in RStudio](https://docs.posit.co/ide/user/ide/guide/tools/copilot.html) and you can see it in action in the video.
+
+## Explore data
+
+Our analysis goal is to see [which Doctor Who writers](https://github.com/rfordatascience/tidytuesday/blob/master/data/2023/2023-11-28/readme.md) have episodes with higher ratings. Let's start by reading in the data, both for episodes and writers, and joining these two datasets together. Let's compute the mean and variance of the ratings for each writer:
+
+```{r}
+library(tidyverse)
+library(datardis)
+data("drwho_episodes")
+data("drwho_writers")
+
+dr_who_joined <-
+  drwho_episodes |> 
+  left_join(drwho_writers) |> 
+  mutate(rating = as.numeric(rating)) |>
+  group_by(writer) |>
+  summarize(n = n(), 
+            std_var = var(rating) / n,
+            rating = mean(rating)) 
+
+dr_who_joined
+```
+
+How are the ratings distributed, especially as related to the number of episodes per writer?
+
+```{r}
+ggplot(dr_who_joined, aes(n, rating)) +
+  geom_point(size = 2) +
+  labs(x = "Number of episodes", y = "Mean rating")
+```
+
+I feel much more certain about the mean rating for the writers who have written a lot of episodes than the ones who have written only a few. How sure are we about those ratings for writer with only a couple of episodes each? This is exactly the kind of question we can answer with [empirical Bayes](https://en.wikipedia.org/wiki/Empirical_Bayes_method). I wrote about [getting started myself with empirical Bayes](https://juliasilge.com/blog/bayesian-blues/) back in 2016, and I recommend the [blog posts](http://varianceexplained.org/r/empirical_bayes_baseball/) and [book](http://varianceexplained.org/r/empirical-bayes-book/) by my friend David Robinson to learn more.
+
+## Learning a prior from the data
+
+What makes empirical Bayes "empirical" is that we learn a prior probability distribution from the data itself. I am going dead simple here, and using a normal distribution for the prior.
+
+```{r}
+prior_mu <- mean(dr_who_joined$rating)
+prior_var <- var(dr_who_joined$rating)
+```
+
+Can't get much simpler than that! Let's plot this prior distribution together with our distribution of ratings.
+
+```{r}
+ggplot(dr_who_joined) +
+    geom_histogram(aes(rating, after_stat(density)), alpha = 0.6) +
+    stat_function(fun = dnorm, 
+                  args = list(mean = prior_mu, sd = sqrt(prior_var)), 
+                  color = "gray30", linewidth = 1.5, lty = 2)
+```
+
+Looks reasonable! If you had more data than we do here, you could use a more complex prior distribution or do a more careful job of fitting the distribution. Given that we only have a couple dozen writers, I think this is good enough for now.
+
+## Shrinkage
+
+Now we can use Bayes Theorem to compute posterior probabilities for each writer. We can calculate:
+
+- the shrinkage factor from the variance of the prior and the variance for each writer
+- the "shrunk" rating from the _measured_ rating, the mean of the prior, and that shrinkage factor
+
+```{r}
+dr_who_empirical <-
+    dr_who_joined |> 
+    mutate(
+        shrinkage = prior_var / (prior_var + std_var),
+        rating_shrunk = shrinkage * rating + (1 - shrinkage) * prior_mu
+    )
+
+dr_who_empirical
+```
+
+Notice that with this very simple approach, we can't compute a rating with empirical Bayes for a writer with only one episode, because we can't compute a variance. For the rest of the writers, how do the measured ratings compare to the "shrunk" ratings?
+
+```{r}
+#| fig.width: 10
+#| fig.height: 7
+library(ggrepel)
+
+dr_who_empirical |> 
+    ggplot(aes(rating, rating_shrunk)) +
+    geom_abline(slope = 1, color = "gray60", linewidth = 1.5, lty = 2) +
+    geom_point(aes(size = n)) +
+    geom_text_repel(aes(label = writer), family = "IBMPlexSans") +
+    coord_fixed()
+```
+
+Notice that for writers with only a few episodes, lower ratings are pulled up while higher ratings are pulled down; they are "shrunk" toward the mean. For writers with many episodes, we don't see much change. I notice that the rating for Neil Gaiman is pulled down _quite_ a bit; my own personal prior here would say that's not right at all and I would expect any additional episodes by Gaiman to still be very highly rated. 😆
