@@ -8,8 +8,11 @@ categories:
   - rstats
 tags:
   - rstats
-summary: "Let's use summarization and visualization to explore how the numbers of polling places have changed in the United States."
+summary: >-
+  Let's use summarization and visualization to explore how the numbers of
+  polling places have changed in the United States.
 ---
+
 
 This is the latest in my series of [screencasts](https://www.youtube.com/juliasilge)! This week we observed Martin Luther King Day in the US and this week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) honors King's legacy, including his work on voting rights, with a focus on polling places in the United States.
 

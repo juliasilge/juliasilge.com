@@ -5,6 +5,7 @@ description: |
 show_header: true
 sidebar_left: false
 # Keep this! Do not edit.
+headless: false
 cascade:
   headless: true
 ---

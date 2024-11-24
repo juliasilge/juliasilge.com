@@ -14,7 +14,7 @@ summary: "Worried about how a certain social media platform is going and want to
 ```{r setup}
 #| include: false
 library(knitr)
-knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
+knitr::opts_chunk$set(eval = FALSE, cache = TRUE, cache.lazy = FALSE, warning = FALSE, 
                       message = FALSE, echo = TRUE, dpi = 180,
                       fig.width = 7, fig.height = 5)
 library(tidyverse)

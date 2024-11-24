@@ -114,11 +114,11 @@ enableEmoji = true
       url       = "https://www.linkedin.com/in/juliasilge/"
   [[params.social]]
       icon      = "orcid" # icon name without the 'fa-'
-      icon_pack = "ai"
+      icon_pack = "fab"
       url       = "https://orcid.org/0000-0002-3671-836X"
   [[params.social]]
       icon      = "google-scholar" # icon name without the 'fa-'
-      icon_pack = "ai"
+      icon_pack = "fab"
       url       = "https://scholar.google.com/citations?hl=en&user=lQBVIkkAAAAJ"
 
 [taxonomies]
