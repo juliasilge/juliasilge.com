@@ -3,7 +3,7 @@ title: Release an R package with Positron
 author: Julia Silge
 date: '2025-03-19'
 format: hugo
-slug: r-pkg-releas
+slug: r-pkg-release
 categories:
   - rstats
 tags:
