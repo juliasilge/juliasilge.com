@@ -14,6 +14,6 @@ command = "hugo -F -b $DEPLOY_PRIME_URL"
 HUGO_ENV = "production"
 
 [[redirects]]
-from = "blog/r-pkg-releas"
-to = "blog/r-pkg-release"
+from = "/blog/r-pkg-releas/"
+to = "/blog/r-pkg-release/"
 status = 301
