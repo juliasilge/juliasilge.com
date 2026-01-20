@@ -1,0 +1,21 @@
+---
+title: Use Positron Assistant with GitHub Copilot
+author: Julia Silge
+date: '2026-01-20'
+format: hugo
+slug: copilot-african-languages
+categories:
+  - positron
+tags:
+  - positron
+summary: >-
+  The newest monthly release of Positron has a revamp of the integration between
+  GitHub Copilot and Positron Assistant.
+---
+
+
+There is a new monthly release of [Positron](https://positron.posit.co/) available, and it features a total revamp of the integration between [Positron Assistant](https://positron.posit.co/assistant) and GitHub Copilot! I am really excited about this change, because it solves a whole slew of problems with authentication to Copilot, but it does mean that if you were *previously* authenticated to GitHub Copilot in Positron Assistant, you need to log out and then back in. In this screencast, I walk you through exactly how to authenticate to GitHub Copilot in Positron and then show a brief way to get started with exploratory data analysis with Positron Assistant, using last week's [`#TidyTuesday` dataset](https://github.com/rfordatascience/tidytuesday) on African languages.
+
+{{% youtube "T8dCQ6iIFXo" %}}
+
+If you were previously authenticated to GitHub Copilot in Positron, you'll [need to both log out and then back in](https://github.com/posit-dev/positron/discussions/11340) to get set up again, after this new release. If you are interested in experimenting with Positron, either with or without the AI code assistance features, I invite you to [download the most recent release](https://positron.posit.co/download) and [share your feedback with us](https://github.com/posit-dev/positron/discussions).
